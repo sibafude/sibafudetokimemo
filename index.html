@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ときめきブラウザエンジン (完全ゲーム化版)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        body { margin: 0; padding: 0; background-color: #111; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; touch-action: none; }
+        canvas { background-color: #000; box-shadow: 0 0 20px rgba(255, 255, 255, 0.1); display: none; }
+        #upload-ui { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10; background: rgba(0, 0, 100, 0.95); border: 2px solid white; padding: 15px; border-radius: 8px; color: white; font-family: sans-serif; font-size: 14px; width: 90%; max-width: 340px; box-shadow: 0 0 15px rgba(0,0,0,0.8); max-height: 95vh; overflow-y: auto; }
+        #upload-ui h3 { margin: 0 0 10px 0; font-size: 16px; text-align: center; border-bottom: 1px solid white; padding-bottom: 5px; }
+        .file-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 11px; }
+        input[type="file"] { color: white; font-size: 10px; width: 160px; }
+        .dbg-input { background: #333; color: white; border: 1px solid #777; width: 35px; }
+        #closeUpload { margin-top: 15px; width: 100%; padding: 12px; background: #0033cc; color: white; border: 2px solid white; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 16px; }
+        .section-title { color: #FFD700; margin-top: 10px; margin-bottom: 5px; border-bottom: 1px dashed #555; padding-bottom: 2px; }
+    </style>
+</head>
+<body>
+    <div id="upload-ui" style="display: none;">
+        <h3>開発モード (アセット変更/デバッグ)</h3>
+        
+        <div class="section-title">一括読込 (推奨)</div>
+        <div class="file-row">
+            <label style="color:#FFF;">ファイル全選択:</label>
+            <input type="file" id="batchUpload" multiple accept="image/*, audio/*">
+        </div>
+        <div id="upload-status" style="color: yellow; text-align: center; font-size: 11px; margin-bottom: 5px;"></div>
+
+        <div class="section-title">パラメータ変更 (デバッグ)</div>
+        <div style="font-size: 11px; display: flex; flex-wrap: wrap; gap: 5px; justify-content: center;">
+            文:<input type="number" id="dbg_bunkei" class="dbg-input">
+            理:<input type="number" id="dbg_rikei" class="dbg-input">
+            芸:<input type="number" id="dbg_geijutsu" class="dbg-input">
+            運:<input type="number" id="dbg_undou" class="dbg-input">
+            雑:<input type="number" id="dbg_zatsugaku" class="dbg-input">
+            容:<input type="number" id="dbg_youshi" class="dbg-input">
+            根:<input type="number" id="dbg_konjou" class="dbg-input">
+            体:<input type="number" id="dbg_tairyoku" class="dbg-input">
+            ｽﾄ:<input type="number" id="dbg_stress" class="dbg-input">
+        </div>
+        <div style="font-size: 11px; margin-top: 5px; text-align: center;">
+            日付: <input type="date" id="dbg_date" style="width: 100px;">
+            <button id="btn_apply_dev" style="padding: 2px 10px; margin-left: 5px;">適用</button>
+        </div>
+
+        <details>
+            <summary style="font-size: 12px; margin-top: 10px; cursor: pointer; color: #AAA;">個別の画像読込 (手動)</summary>
+            <div class="section-title">背景画像</div>
+            <div class="file-row"><label>背景(自宅 朝):</label><input type="file" id="bgHomeUpload" accept="image/*"></div>
+            <div class="file-row"><label style="color:#AAA;">背景(自宅 夜):</label><input type="file" id="bgHomeNightUpload" accept="image/*"></div>
+            <div class="file-row"><label>背景(学校):</label><input type="file" id="bgSchoolUpload" accept="image/*"></div>
+            <div class="file-row"><label>背景(下校):</label><input type="file" id="bgGekouUpload" accept="image/*"></div>
+            <div class="file-row"><label style="color:#FFB6C1;">背景(遊園地):</label><input type="file" id="bgAmusementUpload" accept="image/*"></div>
+            <div class="file-row"><label style="color:#90EE90;">背景(公園):</label><input type="file" id="bgParkUpload" accept="image/*"></div>
+            
+            <div class="section-title">キャラクター</div>
+            <div class="file-row"><label>藤崎 (初期):</label><input type="file" id="h1Upload" accept="image/*"></div>
+            <div class="file-row"><label>如月 (文系):</label><input type="file" id="h2Upload" accept="image/*"></div>
+            <div class="file-row"><label>紐緒 (理系):</label><input type="file" id="h3Upload" accept="image/*"></div>
+            <div class="file-row"><label>片桐 (芸術):</label><input type="file" id="h4Upload" accept="image/*"></div>
+            <div class="file-row"><label>虹野 (根性):</label><input type="file" id="h5Upload" accept="image/*"></div>
+            
+            <div class="section-title">ちびキャラシート</div>
+            <div class="file-row"><label style="color:#87CEFA;">全アクション統合:</label><input type="file" id="chibiSheetUpload" accept="image/*"></div>
+            
+            <div class="section-title">音楽</div>
+            <div class="file-row"><label>BGM (mp3等):</label><input type="file" id="bgmUpload" accept="audio/mpeg, audio/mp3, audio/x-m4a, audio/wav, .mp3, .m4a, .wav, audio/*"></div>
+        </details>
+        
+        <button id="closeUpload">閉じる</button>
+    </div>
+
+    <canvas id="gameCanvas" width="320" height="568"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const V_WIDTH = 320, V_HEIGHT = 568;
+        const VIEW_W = 320, VIEW_H = 320; 
+        const MSG_Y = 320, MSG_H = 100;  
+        const CMD_Y = 420, CMD_H = 148;  
+
+        function resizeCanvas() {
+            const scale = Math.min(window.innerWidth / V_WIDTH, window.innerHeight / V_HEIGHT);
+            canvas.style.width = `${V_WIDTH * scale}px`;
+            canvas.style.height = `${V_HEIGHT * scale}px`;
+        }
+        window.addEventListener('resize', resizeCanvas); 
+
+        const images = {
+            bgHome: { img: new Image(), loaded: false },
+            bgHomeNight: { img: new Image(), loaded: false },
+            bgSchool: { img: new Image(), loaded: false },
+            bgGekou: { img: new Image(), loaded: false },
+            bgAmusement: { img: new Image(), loaded: false },
+            bgPark: { img: new Image(), loaded: false },
+            heroine1: { img: new Image(), loaded: false },
+            heroine2: { img: new Image(), loaded: false },
+            heroine3: { img: new Image(), loaded: false },
+            heroine4: { img: new Image(), loaded: false },
+            heroine5: { img: new Image(), loaded: false },
+            chibiSheet: { img: new Image(), loaded: false } 
+        };
+
+        const ASSET_DIR = "assets/";
+        const assetFiles = {
+            bgHome: "bg_home.png",
+            bgHomeNight: "bg_home_night.png",
+            bgSchool: "bg_school.png",
+            bgGekou: "bg_gekou.png",
+            bgAmusement: "bg_amusement.png",
+            bgPark: "bg_park.png",
+            heroine1: "heroine1.png",
+            heroine2: "heroine2.png",
+            heroine3: "heroine3.png",
+            heroine4: "heroine4.png",
+            heroine5: "heroine5.png",
+            chibiSheet: "chibi_sheet.png"
+        };
+
+        for (let key in assetFiles) {
+            images[key].img.onload = () => { images[key].loaded = true; };
+            images[key].img.src = ASSET_DIR + assetFiles[key];
+        }
+
+        const customBGM = new Audio();
+        customBGM.loop = true;
+        let useCustomBGM = true; 
+        
+        customBGM.src = ASSET_DIR + "bgm.mp3";
+        customBGM.addEventListener('error', function fallbackBGM() {
+            if (customBGM.src.endsWith("bgm.mp3")) {
+                customBGM.src = ASSET_DIR + "bgm.m4a";
+            } else {
+                useCustomBGM = false; 
+                customBGM.removeEventListener('error', fallbackBGM);
+            }
+        });
+
+        document.getElementById('batchUpload').addEventListener('change', function(e) {
+            const files = e.target.files;
+            let loadedCount = 0;
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const fileName = file.name;
+                
+                let matchedKey = null;
+                for (let key in assetFiles) {
+                    if (assetFiles[key] === fileName) {
+                        matchedKey = key; break;
+                    }
+                }
+                
+                if (matchedKey) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => { 
+                        images[matchedKey].img.src = event.target.result; 
+                        images[matchedKey].loaded = true; 
+                    };
+                    reader.readAsDataURL(file);
+                    loadedCount++;
+                } else if (fileName === "bgm.mp3" || fileName === "bgm.m4a") {
+                    customBGM.src = URL.createObjectURL(file);
+                    useCustomBGM = true;
+                    loadedCount++;
+                }
+            }
+            document.getElementById('upload-status').innerText = `${loadedCount}個のファイルを読み込みました。`;
+        });
+
+        document.getElementById('btn_apply_dev').addEventListener('click', () => {
+            playerStats.bunkei = Number(document.getElementById('dbg_bunkei').value);
+            playerStats.rikei = Number(document.getElementById('dbg_rikei').value);
+            playerStats.geijutsu = Number(document.getElementById('dbg_geijutsu').value);
+            playerStats.undou = Number(document.getElementById('dbg_undou').value);
+            playerStats.zatsugaku = Number(document.getElementById('dbg_zatsugaku').value);
+            playerStats.youshi = Number(document.getElementById('dbg_youshi').value);
+            playerStats.konjou = Number(document.getElementById('dbg_konjou').value);
+            playerStats.tairyoku = Number(document.getElementById('dbg_tairyoku').value);
+            playerStats.stress = Number(document.getElementById('dbg_stress').value);
+            
+            const dateStr = document.getElementById('dbg_date').value;
+            if (dateStr) {
+                const parts = dateStr.split('-');
+                if (parts.length === 3) {
+                    currentDate = new Date(parts[0], parts[1] - 1, parts[2]);
+                }
+            }
+            document.getElementById('upload-status').innerText = "パラメータと日付を適用しました。";
+        });
+
+        function setupImageLoader(inputId, imageObjRef) {
+            const el = document.getElementById(inputId);
+            if (el) {
+                el.addEventListener('change', function(e) {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (event) => { imageObjRef.img.src = event.target.result; imageObjRef.loaded = true; };
+                        reader.readAsDataURL(file);
+                    }
+                });
+            }
+        }
+        setupImageLoader('bgHomeUpload', images.bgHome); 
+        setupImageLoader('bgHomeNightUpload', images.bgHomeNight); 
+        setupImageLoader('bgSchoolUpload', images.bgSchool); 
+        setupImageLoader('bgGekouUpload', images.bgGekou); 
+        setupImageLoader('bgAmusementUpload', images.bgAmusement); 
+        setupImageLoader('bgParkUpload', images.bgPark); 
+        setupImageLoader('h1Upload', images.heroine1);
+        setupImageLoader('h2Upload', images.heroine2); 
+        setupImageLoader('h3Upload', images.heroine3);
+        setupImageLoader('h4Upload', images.heroine4); 
+        setupImageLoader('h5Upload', images.heroine5);
+        setupImageLoader('chibiSheetUpload', images.chibiSheet);
+
+        document.getElementById('bgmUpload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                customBGM.src = URL.createObjectURL(file);
+                useCustomBGM = true;
+            }
+        });
+
+        let bgmStarted = false;
+        let sfxCtx = null;
+
+        function initAudioEngine() {
+            if (!sfxCtx) { try { sfxCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {} }
+        }
+
+        async function startBGM() {
+            if (bgmStarted) return;
+            try {
+                bgmStarted = true;
+                if (sfxCtx && sfxCtx.state === 'suspended') sfxCtx.resume();
+                if (useCustomBGM) {
+                    customBGM.play().catch(e => console.warn("MP3再生エラー:", e));
+                } else {
+                    if (typeof Tone === 'undefined') return;
+                    if (window.__tokimemo_tone_part) window.__tokimemo_tone_part.dispose();
+                    Tone.Transport.stop(); Tone.Transport.cancel();
+                    await Tone.start(); 
+                    const synth = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "square" }, envelope: { attack: 0.05, decay: 0.1, sustain: 0.3, release: 1 } }).toDestination();
+                    synth.volume.value = -15;
+                    const melody = [
+                        {"time": "0:0:0", "note": "C5", "duration": "4n"}, {"time": "0:1:0", "note": "E5", "duration": "4n"}, {"time": "0:2:0", "note": "G5", "duration": "4n"}, {"time": "0:3:0", "note": "E5", "duration": "4n"},
+                        {"time": "1:0:0", "note": "A5", "duration": "2n"}, {"time": "1:2:0", "note": "G5", "duration": "2n"}, {"time": "2:0:0", "note": "F5", "duration": "8n"}, {"time": "2:0:2", "note": "G5", "duration": "8n"}
+                    ];
+                    const part = new Tone.Part(function(time, value){ synth.triggerAttackRelease(value.note, value.duration, time); }, melody).start(0);
+                    part.loop = true; part.loopEnd = "4m"; Tone.Transport.bpm.value = 140; Tone.Transport.start();
+                    window.__tokimemo_tone_part = part;
+                }
+            } catch (err) {}
+        }
+
+        function toggleBGM() {
+            if (!bgmStarted) { startBGM(); return; }
+            if (useCustomBGM) {
+                if (customBGM.paused) customBGM.play(); else customBGM.pause();
+            } else {
+                if (typeof Tone === 'undefined') return;
+                if (Tone.Transport.state === "started") Tone.Transport.pause(); else Tone.Transport.start();
+            }
+        }
+
+        function playBeep(frequency = 440, duration = 0.1) {
+            if (!sfxCtx) return;
+            try {
+                if (sfxCtx.state === 'suspended') sfxCtx.resume();
+                const osc = sfxCtx.createOscillator(); const gainNode = sfxCtx.createGain();
+                osc.type = 'square'; osc.frequency.setValueAtTime(frequency, sfxCtx.currentTime);
+                gainNode.gain.setValueAtTime(0.6, sfxCtx.currentTime); 
+                gainNode.gain.exponentialRampToValueAtTime(0.01, sfxCtx.currentTime + duration);
+                osc.connect(gainNode); gainNode.connect(sfxCtx.destination); osc.start(); osc.stop(sfxCtx.currentTime + duration);
+            } catch(e) {}
+        }
+
+        const input = { x: 0, y: 0, clicked: false };
+        let lastTapTime = 0;
+        canvas.addEventListener('pointerdown', (e) => { 
+            if (!bgmStarted) { initAudioEngine(); startBGM(); }
+            e.preventDefault(); 
+            const now = Date.now();
+            if (now - lastTapTime < 200) return; 
+            lastTapTime = now;
+            const rect = canvas.getBoundingClientRect();
+            input.x = (e.clientX - rect.left) * (canvas.width / rect.width);
+            input.y = (e.clientY - rect.top) * (canvas.height / rect.height);
+            input.clicked = true; 
+        });
+
+        let gameState = "IDLE"; 
+        let eventQueue = [];
+        let messagePages = [];
+        let currentPageIndex = 0;
+        let currentChoices = [];
+
+        let sysMsg = ""; 
+        let currentDate = new Date(1994, 3, 4); 
+        let currentDisplayChar = 0; 
+        let currentDisplayBg = "home"; 
+        
+        let isNight = false; 
+        let currentWeekdayCommand = null; 
+        let executingCommand = null; 
+        let executeDaysLeft = 0;
+        let executeDaysMax = 0;
+        let lastDayAdvanceTime = 0;
+        let floatingTexts = []; 
+        let startMonthForTest = 0; 
+        
+        let sickWeeksLeft = 0;
+
+        const commandEffects = {
+            bunkei: { bunkei: 1.0, rikei: 0.2, zatsugaku: 0.2, geijutsu: -0.2, undou: -0.4, stress: 0.6, tairyoku: -1.0 },
+            rikei: { rikei: 1.0, bunkei: 0.2, zatsugaku: 0.2, geijutsu: -0.2, undou: -0.4, stress: 0.6, tairyoku: -1.0 },
+            geijutsu: { geijutsu: 1.0, zatsugaku: 0.2, youshi: 0.2, bunkei: -0.2, rikei: -0.2, undou: -0.4, stress: 0.6, tairyoku: -0.8 },
+            undou: { undou: 1.0, konjou: 0.8, bunkei: -0.4, rikei: -0.4, geijutsu: -0.2, stress: 0.8, tairyoku: -1.5 },
+            zatsugaku: { zatsugaku: 1.0, youshi: 0.2, rikei: -0.2, geijutsu: -0.2, konjou: -0.2, stress: 0.4, tairyoku: -0.5 },
+            youshi: { youshi: 1.0, zatsugaku: 0.2, undou: -0.2, konjou: -0.4, stress: 0.4, tairyoku: -0.5 },
+            rest: { stress: -6.0, youshi: -0.6, konjou: -0.6, undou: -0.6, zatsugaku: -0.6, tairyoku: 6.0 }
+        };
+
+        const playerStats = { bunkei: 10, rikei: 10, geijutsu: 10, undou: 10, zatsugaku: 10, youshi: 10, konjou: 10, stress: 0, tairyoku: 100 };
+        const heroines = [
+            { id: 1, name: "藤崎 詩織", tokimeki: 10, shoushin: 0, met: true, dialogue: { meet: "「あ、あなたもこの学校だったのね。」", phone_accept: "「いいわよ。どこへ行く？」", phone_reject: "「ごめんなさい、その日は用事があるの。」", date_amusement: "「ジェットコースター、楽しかったわね。」", date_park: "「のんびり歩くのも、たまにはいいわね。」", date_escape: "「ごめん、急用を思い出したわ！じゃあね！」", gekou_invite: "「あ、奇遇ね。一緒に帰らない？」", gekou_ok: "「ええ、一緒に帰りましょう。」", gekou_ng: "「ごめんなさい、今日は用事があるの。」", gekou_reject: "「ごめんなさい、今日は急いでるから。またね。」", bomb: "「...最低ね。」" } },
+            { id: 2, name: "如月 未緒", tokimeki: 5,  shoushin: 0, met: false, dialogue: { meet: "「あ、あの...同じクラスの...」", phone_accept: "「わ、私でいいんですか？ はい...」", phone_reject: "「あ、あの、その日はちょっと...」", date_amusement: "「はわわ...怖かったですぅ...」", date_park: "「静かで、落ち着きますね...」", date_escape: "「あ、あの！急な用事が入ってしまって...！」", gekou_invite: "「あの、もしよかったら一緒に...」", gekou_ok: "「はいっ！嬉しいです...」", gekou_ng: "「あ、ごめんなさい、急ぐので...」", gekou_reject: "「あっ、今日は本を読みたいので...」", bomb: "「ひどいです...」" } },
+            { id: 3, name: "紐緒 結奈", tokimeki: 5,  shoushin: 0, met: false, dialogue: { meet: "「私の実験の邪魔をしないでくれる？」", phone_accept: "「ふん、まあいいわ。付き合ってあげる。」", phone_reject: "「無理ね。実験のデータ取りがあるの。」", date_amusement: "「遠心力の計算にはちょうどいいわね。」", date_park: "「たまには光合成も必要ね。」", date_escape: "「ふん、あなたといても時間の無駄ね。帰るわ。」", gekou_invite: "「ちょっと、荷物持ちなさいよ。」", gekou_ok: "「光栄に思いなさい。」", gekou_ng: "「実験があるから。じゃあね。」", gekou_reject: "「馴れ馴れしく話しかけないでくれる？」", bomb: "「万死に値するわね。」" } },
+            { id: 4, name: "片桐 彩子", tokimeki: 5,  shoushin: 0, met: false, dialogue: { meet: "「ヘ〜イ！ Youも美術部？」", phone_accept: "「OK！ 遊びに行っちゃおう！」", phone_reject: "「Oh... その日はアトリエに籠る予定なの。」", date_amusement: "「ワオ！ スリリングでエキサイティングね！」", date_park: "「自然のアートって、ビューティフルね。」", date_escape: "「Oh my God! あなたのセンス、最悪ね！Bye!」", gekou_invite: "「ヘイ！ 一緒に帰ろうよ！」", gekou_ok: "「レッツゴー！」", gekou_ng: "「Sorry, 今日はアトリエに行くの。」", gekou_reject: "「No thank you! 今日は一人で帰るわ。」", bomb: "「オーマイガッ！ 信じられない！」" } },
+            { id: 5, name: "虹野 沙希", tokimeki: 5,  shoushin: 0, met: false, dialogue: { meet: "「ファイトー！ あ、ごめんなさい大声出して。」", phone_accept: "「うん！ わたしでよかったら！」", phone_reject: "「ごめんなさい、マネージャーの仕事があって...」", date_amusement: "「きゃー！ すごい迫力でしたね！」", date_park: "「お弁当作ってくればよかったですね。」", date_escape: "「あ、ごめんなさい！急に部活の用事が...！」", gekou_invite: "「あ、お疲れ様です！ 一緒に帰りませんか？」", gekou_ok: "「わぁ、嬉しいです！ 帰りましょう！」", gekou_ng: "「ごめんなさい、部活の買い出しがあるんです。」", gekou_reject: "「ごめんなさい、今日は部活のみんなと帰るので。」", bomb: "「…見損ないました。」" } }
+        ];
+
+        function isHolidayDay(date) {
+            const day = date.getDay();
+            if (day === 0) return true; 
+            const md = (date.getMonth() + 1) + "/" + date.getDate();
+            const holidays = ["1/1", "1/15", "2/11", "3/21", "4/29", "5/3", "5/4", "5/5", "9/23", "10/10", "11/3", "11/23", "12/23"];
+            return holidays.includes(md);
+        }
+        function formatDate(date) {
+            const days = ['日', '月', '火', '水', '木', '金', '土'];
+            return `${date.getFullYear()}年 ${date.getMonth() + 1}月 ${date.getDate()}日 (${days[date.getDay()]})`;
+        }
+
+        function pushMessage(text) { eventQueue.push({ type: 'message', text: text }); }
+        function pushChoice(choices) { eventQueue.push({ type: 'choice', choices: choices }); }
+        function pushAction(actionFunc) { eventQueue.push({ type: 'action', action: actionFunc }); }
+
+        function processQueue() {
+            if (gameState === "MESSAGE" || gameState === "CHOICE" || gameState === "SETTINGS" || gameState === "EXECUTING") return;
+            if (eventQueue.length === 0) { gameState = "COMMAND"; return; }
+            const nextEvent = eventQueue[0];
+            if (nextEvent.type === 'message') setupMessage(nextEvent.text);
+            else if (nextEvent.type === 'choice') { currentChoices = nextEvent.choices; gameState = "CHOICE"; }
+            else if (nextEvent.type === 'action') { nextEvent.action(); eventQueue.shift(); processQueue(); }
+        }
+
+        function setupMessage(text) {
+            try {
+                messagePages = [];
+                ctx.font = "13px sans-serif";
+                const maxWidth = V_WIDTH - 24; 
+                const paragraphs = text.split('\n');
+                let lines = [];
+                for (let para of paragraphs) {
+                    if (para === "") continue;
+                    let currentLine = "";
+                    for (let char of para.split('')) {
+                        let testLine = currentLine + char;
+                        if (ctx.measureText(testLine).width > maxWidth && currentLine.length > 0) {
+                            lines.push(currentLine); currentLine = char;
+                        } else currentLine = testLine;
+                    }
+                    if (currentLine) lines.push(currentLine);
+                }
+                for (let i = 0; i < lines.length; i += 2) {
+                    let page = lines[i];
+                    if (i + 1 < lines.length) page += "\n" + lines[i+1];
+                    messagePages.push(page);
+                }
+                if (messagePages.length === 0) messagePages.push("");
+                currentPageIndex = 0;
+                gameState = "MESSAGE";
+            } catch(e) { console.error(e); gameState = "COMMAND"; }
+        }
+
+        function executeCommand(type) {
+            if (type === "phone") {
+                openPhoneMenu();
+                return;
+            }
+            if (isHolidayDay(currentDate) && !isNight) {
+                executingCommand = type;
+                executeDaysLeft = 1;
+                executeDaysMax = 1;
+                gameState = "EXECUTING";
+                currentDisplayBg = (type === "rest") ? "home" : "school";
+                sysMsg = "実行中...";
+                lastDayAdvanceTime = Date.now();
+            } else {
+                currentWeekdayCommand = type;
+                startWeekdayExecution();
+            }
+        }
+
+        function startWeekdayExecution() {
+            if (isHolidayDay(currentDate) && isNight) {
+                currentDate.setDate(currentDate.getDate() + 1);
+                isNight = false;
+            }
+            executingCommand = currentWeekdayCommand;
+            startMonthForTest = currentDate.getMonth();
+
+            let count = 0;
+            let tempDate = new Date(currentDate);
+            while (!isHolidayDay(tempDate)) {
+                count++; tempDate.setDate(tempDate.getDate() + 1);
+                if (count > 10) break; 
+            }
+            executeDaysLeft = count; executeDaysMax = count;
+            gameState = "EXECUTING";
+            currentDisplayBg = (executingCommand === "rest") ? "home" : "school";
+            sysMsg = "実行中...";
+            lastDayAdvanceTime = Date.now();
+        }
+
+        function advanceDay() {
+            const eff = commandEffects[executingCommand];
+            const oldStatsInt = {};
+            for (let k in playerStats) oldStatsInt[k] = Math.floor(playerStats[k]);
+            
+            if (eff) {
+                let isHolidayBonus = (isHolidayDay(currentDate) && !isNight);
+                for (let k in eff) {
+                    let base = eff[k] * (isHolidayBonus ? 2.5 : 1.0); 
+                    let rand = (Math.random() * 1.0 - 0.5); 
+                    if(k === 'stress' && base < 0) rand = (Math.random() * 2.0 - 1.0); 
+                    
+                    playerStats[k] += base + rand;
+                    playerStats[k] = Math.min(999, Math.max(0, playerStats[k]));
+                }
+                playBeep(440 + Math.random() * 50, 0.05);
+            }
+
+            const statNames = { bunkei: "文系", rikei: "理系", geijutsu: "芸術", undou: "運動", zatsugaku: "雑学", youshi: "容姿", konjou: "根性", stress: "ストレス", tairyoku: "体力" };
+            const cxObj = { bunkei: 12, rikei: 62, geijutsu: 112, undou: 162, zatsugaku: 212, youshi: 262, konjou: 12, tairyoku: 62, stress: 112 };
+            const cyObj = { bunkei: MSG_Y+66, rikei: MSG_Y+66, geijutsu: MSG_Y+66, undou: MSG_Y+66, zatsugaku: MSG_Y+66, youshi: MSG_Y+66, konjou: MSG_Y+80, tairyoku: MSG_Y+80, stress: MSG_Y+80 };
+
+            for (let k in playerStats) {
+                const newInt = Math.floor(playerStats[k]);
+                const diff = newInt - oldStatsInt[k];
+                if (diff !== 0 && cxObj[k]) {
+                    let color = diff > 0 ? (k === 'stress' ? "#FF5555" : "#55FF55") : (k === 'stress' ? "#55FF55" : "#FF5555");
+                    let sign = diff > 0 ? "+" : "";
+                    floatingTexts.push({ text: `${statNames[k]}${sign}${diff}`, x: cxObj[k] + 15, y: cyObj[k] - 5, color: color, life: 30, maxLife: 30, vy: -0.5 });
+                }
+            }
+
+            finishDayExecution();
+        }
+
+        function finishDayExecution() {
+            heroines.filter(h => h.met).forEach(h => { h.shoushin += (1 + h.tokimeki / 10) / 7; });
+            executeDaysLeft--;
+
+            if (executeDaysLeft > 0) {
+                currentDate.setDate(currentDate.getDate() + 1); 
+                if (isHolidayDay(currentDate)) {
+                    isNight = false; currentDisplayBg = "home";
+                    sysMsg = sickWeeksLeft > 0 ? "体調不良だ。休養しよう..." : "今日は休日だ。\n何をしようかな？";
+                    gameState = "IDLE"; checkEventsAfterCommand(); 
+                }
+            } else {
+                if (executingCommand === "rest" && sickWeeksLeft > 0) {
+                    sickWeeksLeft--;
+                    if (sickWeeksLeft <= 0) {
+                        pushAction(() => playBeep(1046, 0.2));
+                        pushMessage("体調がすっかり良くなった！\nこれで通常通り活動できるぞ。");
+                    }
+                }
+
+                if (isHolidayDay(currentDate) && !isNight) {
+                    isNight = true; currentDisplayBg = "home";
+                    if (currentWeekdayCommand) {
+                        sysMsg = "（明日から平日の予定を再開しよう）";
+                        pushAction(() => { startWeekdayExecution(); });
+                        processQueue();
+                    } else {
+                        sysMsg = sickWeeksLeft > 0 ? "体調不良だ。休養しよう..." : "今週の予定を決めよう。";
+                        gameState = "IDLE"; checkEventsAfterCommand();
+                    }
+                } else {
+                    currentDate.setDate(currentDate.getDate() + 1);
+                    isNight = false; currentWeekdayCommand = null; 
+                    currentDisplayBg = "home";
+                    sysMsg = sickWeeksLeft > 0 ? "体調不良だ。休養しよう..." : "今日は休日だ。\n何をしようかな？";
+                    gameState = "IDLE"; checkEventsAfterCommand();
+                }
+            }
+        }
+
+        function checkEventsAfterCommand() {
+            if (currentDate.getFullYear() >= 1997 && currentDate.getMonth() >= 2) {
+                triggerEndingEvent(); return;
+            }
+            if (startMonthForTest !== currentDate.getMonth()) {
+                const m = currentDate.getMonth() + 1;
+                if (m === 7 || m === 12 || m === 3) triggerTestEvent();
+                if (m === 9) triggerSportsDayEvent(); 
+            }
+
+            if (sickWeeksLeft <= 0 && (playerStats.tairyoku < 20 || playerStats.stress > 80)) {
+                if (Math.random() < 0.3) {
+                    sickWeeksLeft = 2;
+                    pushAction(() => playBeep(200, 0.5));
+                    pushMessage("体調が悪い...無理をしすぎたようだ。\n病気になってしまった。\nしばらくは休養しかできない。");
+                }
+            }
+
+            const metCount = heroines.filter(h => h.met).length;
+            let multi = (metCount >= 2) ? 1.3 : 1.0;
+            
+            if (!heroines[1].met && playerStats.bunkei >= 50 * multi) {
+                heroines[1].met = true; pushAction(() => {currentDisplayChar = 2; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
+                pushMessage(`図書室で「如月 未緒」と出会った！\n${heroines[1].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
+            }
+            if (!heroines[2].met && playerStats.rikei >= 50 * multi) {
+                heroines[2].met = true; pushAction(() => {currentDisplayChar = 3; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
+                pushMessage(`科学室で「紐緒 結奈」と出会った！\n${heroines[2].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
+            }
+            if (!heroines[3].met && playerStats.geijutsu >= 50 * multi) {
+                heroines[3].met = true; pushAction(() => {currentDisplayChar = 4; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
+                pushMessage(`美術室で「片桐 彩子」と出会った！\n${heroines[3].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
+            }
+            if (!heroines[4].met && playerStats.konjou >= 30 * multi) {
+                heroines[4].met = true; pushAction(() => {currentDisplayChar = 5; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
+                pushMessage(`グラウンドで「虹野 沙希」と出会った！\n${heroines[4].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
+            }
+
+            const bombers = heroines.filter(h => h.met && h.shoushin >= 100);
+            if (bombers.length > 0) {
+                triggerBombExplosion(bombers[0]); 
+            } else {
+                const maxShoushin = Math.max(...heroines.filter(h => h.met).map(h => h.shoushin));
+                if (maxShoushin >= 80) {
+                    if (Math.random() < 0.2) {
+                        pushAction(() => playBeep(200, 0.3));
+                        pushMessage("...誰かの爆弾が点火したようだ。\n電話をしてケアしよう。");
+                    }
+                }
+            }
+
+            if (!isHolidayDay(currentDate) && executingCommand !== "rest" && executeDaysMax > 1 && Math.random() < 0.05) {
+                triggerRandomEvent();
+            }
+        }
+
+        // --- 各種イベント定義 ---
+        function triggerTestEvent() {
+            pushAction(() => { currentDisplayBg = "school"; playBeep(880, 0.15); });
+            pushMessage("今週は期末テストだ。\nこれまでの勉強の成果を見せよう！");
+            pushAction(() => {
+                const score = playerStats.bunkei + playerStats.rikei + playerStats.geijutsu + playerStats.zatsugaku;
+                let rank = 500 - Math.floor(score / 4);
+                if(rank < 1) rank = 1; if(rank > 500) rank = 500;
+                pushMessage(`テストの結果が貼り出されている。\n俺は 500人中 ${rank}位だった！`);
+                if (rank <= 50) {
+                    pushMessage("「すごい！ トップクラスだ！」\n女の子たちの評価が上がったようだ。");
+                    pushAction(() => { heroines.filter(h=>h.met).forEach(h => h.tokimeki += 5); playBeep(1046, 0.3); });
+                } else if (rank >= 300) {
+                    pushMessage("「う、赤点ギリギリ...」\n女の子たちの評価が下がってしまった。");
+                    pushAction(() => { heroines.filter(h=>h.met).forEach(h => h.tokimeki -= 2); playBeep(200, 0.3); });
+                }
+            });
+            pushAction(() => { currentDisplayBg = "home"; });
+        }
+
+        function triggerSportsDayEvent() {
+            pushAction(() => { currentDisplayBg = "school"; playBeep(880, 0.15); });
+            pushMessage("今日は運動会だ！\nこれまでの鍛錬の成果を見せよう！");
+            pushAction(() => {
+                const score = playerStats.undou + (playerStats.konjou / 2);
+                let rank = 150 - Math.floor(score);
+                if(rank < 1) rank = 1; if(rank > 150) rank = 150;
+                pushMessage(`全競技が終了した。\n俺の成績は 150人中 ${rank}位だった！`);
+                if (rank <= 20) {
+                    pushMessage("「すごい！ 大活躍だったわね！」\n女の子たちの評価が上がったようだ。");
+                    pushAction(() => { heroines.filter(h=>h.met).forEach(h => h.tokimeki += 8); playBeep(1046, 0.3); });
+                } else if (rank >= 120) {
+                    pushMessage("「もうちょっと頑張れたんじゃない？」\n女の子たちの評価が下がってしまった。");
+                    pushAction(() => { heroines.filter(h=>h.met).forEach(h => h.tokimeki -= 3); playBeep(200, 0.3); });
+                }
+            });
+            pushAction(() => { currentDisplayBg = "home"; });
+        }
+
+        function triggerEndingEvent() {
+            pushAction(() => { currentDisplayChar = 0; currentDisplayBg = "school"; });
+            pushMessage("1997年 3月1日...\nついに卒業式の日を迎えた。");
+            pushMessage("伝説の樹の下で待っていると\n誰かがやってきたようだ...");
+            pushAction(() => {
+                let bestHeroine = null; let maxTokimeki = 40; 
+                for(let h of heroines) {
+                    if(h.met && h.tokimeki > maxTokimeki && h.shoushin < 50) { bestHeroine = h; maxTokimeki = h.tokimeki; }
+                }
+                if (bestHeroine) {
+                    pushAction(() => { currentDisplayChar = bestHeroine.id; playBeep(880, 0.2); setTimeout(()=>playBeep(1046, 0.4), 200); });
+                    pushMessage(`${bestHeroine.name}「...来てくれて、ありがとう。」`);
+                    pushMessage(`${bestHeroine.name}「ずっと前から、あなたのことが...\n好きでした！」`);
+                    pushMessage("ハッピーエンド！\n（画面をタップして最初から）");
+                } else {
+                    pushAction(() => { playBeep(200, 0.5); });
+                    pushMessage("............\n誰も来なかった。");
+                    pushMessage("俺の青春は一体何だったんだ...\nバッドエンド。\n（タップして最初から）");
+                }
+            });
+            pushAction(() => {
+                currentDate = new Date(1994, 3, 4);
+                isNight = false; currentWeekdayCommand = null; sickWeeksLeft = 0;
+                for(let k in playerStats) playerStats[k] = (k==='stress' ? 0 : (k==='tairyoku'? 100 : 10));
+                heroines.forEach((h, i) => { h.tokimeki = (i===0 ? 10 : 5); h.shoushin = 0; h.met = (i===0); });
+                currentDisplayChar = 0; currentDisplayBg = "home";
+                sysMsg = "今週の予定を決めよう。";
+            });
+        }
+
+        function triggerBombExplosion(bomber) {
+            pushAction(() => { playBeep(100, 0.5); currentDisplayChar = bomber.id; currentDisplayBg = "school"; });
+            pushMessage(`大変だ！ ${bomber.name} が怒っている\nという噂が流れた！\n${bomber.dialogue.bomb}`);
+            pushAction(() => {
+                heroines.filter(h => h.met).forEach(h => {
+                    h.tokimeki = Math.max(0, h.tokimeki - 20); 
+                    if (h.id !== bomber.id) h.shoushin += 15; else h.shoushin = 0; 
+                });
+            });
+            pushMessage("この噂のせいで、女の子たちの\n俺への評価がガタ落ちしてしまった...");
+            pushAction(() => { currentDisplayChar = 0; currentDisplayBg = "home"; });
+        }
+
+        function openPhoneMenu() {
+            const metHeroines = heroines.filter(h => h.met);
+            let choices = metHeroines.map(h => ({
+                text: `${h.name} に電話`, 
+                action: () => { 
+                    eventQueue.shift(); 
+                    let successRate = h.tokimeki * 2 + 30; // ★ 成功率のベース値をアップ（以前は + 10）
+                    if (Math.random() * 100 < successRate) {
+                        startDateEvent(h); 
+                    } else {
+                        pushAction(() => { currentDisplayChar = h.id; currentDisplayBg = "home"; playBeep(200, 0.15); });
+                        pushMessage(`${h.name} に電話してデートに誘ったが...\n${h.dialogue.phone_reject}`);
+                        pushAction(() => { 
+                            currentDisplayChar = 0; 
+                            isNight = true; 
+                            sysMsg = "デートを断られてしまった...\n今週の予定を決めよう。";
+                        });
+                        processQueue();
+                    }
+                }
+            }));
+            choices.push({ text: "やめる", action: () => { 
+                eventQueue.shift(); sysMsg = "電話をかけるのをやめた。\n今日は何をしようかな？"; gameState = "COMMAND"; 
+            }});
+            pushChoice(choices);
+        }
+
+        function startDateEvent(target) {
+            pushAction(() => { currentDisplayChar = 0; currentDisplayBg = "home"; playBeep(659, 0.15); });
+            pushMessage(`${target.name} に電話してデートに誘った。\n${target.dialogue.phone_accept}`);
+            pushChoice([
+                { text: "遊園地で遊ぶ", action: () => { processDateChoice(target, "amusement", target.dialogue.date_amusement); }},
+                { text: "公園で散歩", action: () => { processDateChoice(target, "park", target.dialogue.date_park); }}
+            ]);
+            processQueue();
+        }
+
+        function processDateChoice(target, placeStr, successMsg) {
+            eventQueue.shift();
+            pushAction(() => { currentDisplayBg = placeStr; currentDisplayChar = target.id; });
+            
+            let escapeChance = Math.max(0, 60 - playerStats.youshi);
+            let escaped = (Math.random() * 100 < escapeChance);
+
+            if (escaped) {
+                pushAction(() => { playBeep(200, 0.3); target.tokimeki = Math.max(0, target.tokimeki - 10); target.shoushin += 10; });
+                pushMessage(`${target.dialogue.date_escape}`);
+                pushMessage("......容姿が低すぎて\n幻滅され、逃げられてしまったようだ。");
+            } else {
+                pushMessage(`休日に一緒にデートをした。\n${successMsg}`);
+                pushAction(() => {
+                    target.tokimeki += (placeStr === "amusement" ? 12 : 5); target.shoushin = 0; 
+                    playBeep(880, 0.15); setTimeout(()=>playBeep(1046, 0.2), 100); 
+                });
+            }
+
+            pushAction(() => { 
+                currentDisplayChar = 0; currentDisplayBg = "home"; 
+                isNight = true; 
+                sysMsg = "今週の予定を決めよう。";
+            }); 
+            processQueue();
+        }
+
+        function triggerRandomEvent() {
+            const metHeroines = heroines.filter(h => h.met);
+            if (metHeroines.length === 0) return;
+            const target = metHeroines[Math.floor(Math.random() * metHeroines.length)];
+            
+            pushAction(() => { currentDisplayBg = "gekou"; currentDisplayChar = target.id; });
+            pushMessage(`下校中、偶然 ${target.name} と会った。\n${target.dialogue.gekou_invite}`);
+            pushChoice([
+                { text: "一緒に帰る", action: () => {
+                    eventQueue.shift();
+                    let successRate = target.tokimeki * 2 + 20;
+                    if (Math.random() * 100 < successRate) {
+                        pushAction(() => {
+                            target.tokimeki += 5; target.shoushin = Math.max(0, target.shoushin - 10); playBeep(880, 0.15); setTimeout(()=>playBeep(1046, 0.2), 100);
+                        });
+                        pushMessage(`楽しく話しながら一緒に帰った。\n${target.dialogue.gekou_ok}\nときめき度が上がった！`);
+                    } else {
+                        pushAction(() => { playBeep(200, 0.3); });
+                        pushMessage(`${target.dialogue.gekou_reject}\n一緒に帰るのを断られてしまった...`);
+                    }
+                    pushAction(() => { currentDisplayBg = "home"; currentDisplayChar = 0; }); processQueue();
+                }},
+                { text: "断る", action: () => {
+                    eventQueue.shift();
+                    pushAction(() => { target.shoushin += 15; playBeep(200, 0.3); });
+                    pushMessage(`${target.dialogue.gekou_ng}\n少し冷たい態度をとってしまった。`);
+                    pushAction(() => { currentDisplayBg = "home"; currentDisplayChar = 0; }); processQueue();
+                }}
+            ]);
+        }
+
+        function saveGame() {
+            const state = { playerStats, heroines, date: currentDate.getTime(), currentDisplayChar, currentDisplayBg, isNight, currentWeekdayCommand, sickWeeksLeft };
+            localStorage.setItem('tokimemo_save', JSON.stringify(state));
+            sysMsg = "セーブが完了しました。\n" + (sickWeeksLeft > 0 ? "体調不良だ。休養しよう...": (isHolidayDay(currentDate) ? (isNight?"今週の予定を決めよう。":"今日は何をしようかな？") : "今週の予定を決めよう。")); 
+            playBeep(1046, 0.15); gameState = "COMMAND";
+        }
+        function loadGame() {
+            const saved = localStorage.getItem('tokimemo_save');
+            if (saved) {
+                const state = JSON.parse(saved);
+                Object.assign(playerStats, state.playerStats);
+                state.heroines.forEach((sh, i) => { if(heroines[i]) Object.assign(heroines[i], sh); });
+                currentDate = new Date(state.date); 
+                currentDisplayChar = state.currentDisplayChar || 0;
+                currentDisplayBg = state.currentDisplayBg || "home";
+                isNight = state.isNight || false;
+                currentWeekdayCommand = state.currentWeekdayCommand || null;
+                sickWeeksLeft = state.sickWeeksLeft || 0;
+                sysMsg = "ロードが完了しました。\n" + (sickWeeksLeft > 0 ? "体調不良だ。休養しよう...": (isHolidayDay(currentDate) ? (isNight?"今週の予定を決めよう。":"今日は何をしようかな？") : "今週の予定を決めよう。")); 
+                playBeep(1318, 0.15);
+            } else { sysMsg = "セーブデータがありません。"; playBeep(200, 0.2); }
+            gameState = "COMMAND";
+        }
+
+        function openDevMode() {
+            document.getElementById('upload-ui').style.display = 'block';
+            
+            const p = playerStats;
+            document.getElementById('dbg_bunkei').value = Math.floor(p.bunkei);
+            document.getElementById('dbg_rikei').value = Math.floor(p.rikei);
+            document.getElementById('dbg_geijutsu').value = Math.floor(p.geijutsu);
+            document.getElementById('dbg_undou').value = Math.floor(p.undou);
+            document.getElementById('dbg_zatsugaku').value = Math.floor(p.zatsugaku);
+            document.getElementById('dbg_youshi').value = Math.floor(p.youshi);
+            document.getElementById('dbg_konjou').value = Math.floor(p.konjou);
+            document.getElementById('dbg_tairyoku').value = Math.floor(p.tairyoku);
+            document.getElementById('dbg_stress').value = Math.floor(p.stress);
+            
+            const y = currentDate.getFullYear();
+            const m = String(currentDate.getMonth() + 1).padStart(2, '0');
+            const d = String(currentDate.getDate()).padStart(2, '0');
+            document.getElementById('dbg_date').value = `${y}-${m}-${d}`;
+            document.getElementById('upload-status').innerText = "";
+        }
+
+        const btnW = 86, btnH = 28;
+        const cols = [15, 117, 219];
+        const rows = [CMD_Y + 15, CMD_Y + 55, CMD_Y + 95];
+
+        const buttons = [
+            { x: cols[0], y: rows[0], w: btnW, h: btnH, text: "文系", action: () => executeCommand("bunkei") },
+            { x: cols[1], y: rows[0], w: btnW, h: btnH, text: "理系", action: () => executeCommand("rikei") },
+            { x: cols[2], y: rows[0], w: btnW, h: btnH, text: "芸術", action: () => executeCommand("geijutsu") },
+            { x: cols[0], y: rows[1], w: btnW, h: btnH, text: "運動", action: () => executeCommand("undou") },
+            { x: cols[1], y: rows[1], w: btnW, h: btnH, text: "雑学", action: () => executeCommand("zatsugaku") },
+            { x: cols[2], y: rows[1], w: btnW, h: btnH, text: "容姿", action: () => executeCommand("youshi") },
+            { x: cols[0], y: rows[2], w: btnW, h: btnH, text: "休養", action: () => executeCommand("rest") },
+            { x: cols[1], y: rows[2], w: btnW, h: btnH, text: "電話", action: () => executeCommand("phone"), isSpecial: true },
+            { x: cols[2], y: rows[2], w: btnW, h: btnH, text: "設定", action: () => { gameState = "SETTINGS"; playBeep(880); }, isSystem: true }
+        ];
+
+        const settingsButtons = [
+            { x: 60, y: 120, w: 200, h: 40, text: "セーブする", action: () => { saveGame(); } },
+            { x: 60, y: 170, w: 200, h: 40, text: "ロードする", action: () => { loadGame(); } },
+            { x: 60, y: 220, w: 200, h: 40, text: "BGM 切替", action: toggleBGM },
+            { x: 60, y: 270, w: 200, h: 40, text: "開発モード", action: () => { openDevMode(); } },
+            { x: 60, y: 320, w: 200, h: 40, text: "閉じる", action: () => { 
+                gameState = "COMMAND"; playBeep(523); 
+                if(!sysMsg) sysMsg = sickWeeksLeft > 0 ? "体調不良だ。休養しよう..." : (isHolidayDay(currentDate) ? (isNight?"今週の予定を決めよう。":"今日は何をしようかな？") : "今週の予定を決めよう。");
+            }}
+        ];
+
+        let isGameRunning = false;
+        let globalError = "";
+
+        document.getElementById('closeUpload').addEventListener('click', function() {
+            document.getElementById('upload-ui').style.display = 'none';
+            if (isGameRunning) {
+                gameState = "SETTINGS"; 
+            }
+        });
+
+        function startGame() {
+            canvas.style.display = 'block';
+            resizeCanvas(); 
+            
+            gameState = "IDLE"; 
+            eventQueue = [];
+            currentDisplayChar = 0; 
+            currentDisplayBg = "school"; 
+            isNight = false;
+            currentWeekdayCommand = null;
+            sickWeeksLeft = 0;
+            sysMsg = ""; 
+            
+            pushMessage("入学式。\n今日から「きらめき高校」の生徒だ！");
+            pushMessage("充実した3年間にしよう！");
+            pushAction(() => { currentDisplayChar = 1; currentDisplayBg = "school"; playBeep(880, 0.2); });
+            pushMessage(`${heroines[0].name}\n${heroines[0].dialogue.meet}`);
+            pushAction(() => { 
+                currentDisplayChar = 0; 
+                currentDisplayBg = "home"; 
+                sysMsg = "今週の予定を決めよう。";
+            });
+
+            if(!isGameRunning) { 
+                isGameRunning = true; 
+                requestAnimationFrame(gameLoop); 
+            }
+        }
+
+        function update() {
+            try {
+                if (gameState === "EXECUTING") {
+                    const now = Date.now();
+                    if (now - lastDayAdvanceTime > 400) { 
+                        lastDayAdvanceTime = now;
+                        advanceDay();
+                    }
+                }
+
+                while (gameState === "IDLE" && eventQueue.length > 0) {
+                    const nextEvent = eventQueue.shift();
+                    if (nextEvent.type === 'message') {
+                        setupMessage(nextEvent.text); 
+                    } else if (nextEvent.type === 'choice') {
+                        currentChoices = nextEvent.choices;
+                        gameState = "CHOICE"; 
+                    } else if (nextEvent.type === 'action') {
+                        nextEvent.action(); 
+                    }
+                }
+
+                if (gameState === "IDLE" && eventQueue.length === 0) {
+                    gameState = "COMMAND";
+                }
+
+                if (input.clicked) {
+                    if (gameState === "MESSAGE") {
+                        currentPageIndex++;
+                        if (currentPageIndex >= messagePages.length) gameState = "IDLE"; 
+                    } else if (gameState === "CHOICE") {
+                        const choiceH = 40;
+                        const startY = MSG_Y - 10 - (currentChoices.length * choiceH);
+                        for (let i = 0; i < currentChoices.length; i++) {
+                            const cy = startY + (i * choiceH);
+                            if (input.x >= 40 && input.x <= 280 && input.y >= cy && input.y <= cy + 34) {
+                                gameState = "IDLE"; 
+                                currentChoices[i].action();
+                                break;
+                            }
+                        }
+                    } else if (gameState === "SETTINGS") {
+                        for (let btn of settingsButtons) {
+                            if (input.x >= btn.x && input.x <= btn.x + btn.w && input.y >= btn.y && input.y <= btn.y + btn.h) {
+                                btn.action(); break;
+                            }
+                        }
+                    } else if (gameState === "COMMAND") {
+                        for (let btn of buttons) {
+                            if (input.x >= btn.x && input.x <= btn.x + btn.w && input.y >= btn.y && input.y <= btn.y + btn.h) {
+                                if (btn.text !== "休養" && btn.text !== "設定" && sickWeeksLeft > 0) {
+                                    sysMsg = "今は体調不良で動けない。\n休養して治そう...";
+                                    playBeep(200, 0.2);
+                                } else if (btn.text === "電話" && (!isHolidayDay(currentDate) || isNight)) {
+                                    sysMsg = "今は電話できない。\n予定を決めよう。";
+                                    playBeep(200, 0.2);
+                                } else {
+                                    if(!btn.isSystem) gameState = "IDLE";
+                                    btn.action();
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    input.clicked = false;
+                }
+            } catch(e) { console.error(e); globalError = e.message; }
+        }
+
+        function drawWindow(x, y, w, h) {
+            ctx.fillStyle = "rgba(0, 0, 120, 0.9)"; ctx.fillRect(x, y, w, h);
+            ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2; ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+        }
+
+        function draw() {
+            if (globalError) {
+                ctx.fillStyle = "red"; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+                ctx.fillStyle = "white"; ctx.font = "14px sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+                ctx.fillText("Fatal Error:", 10, 10);
+                let lines = globalError.match(/.{1,20}/g) || [globalError];
+                lines.forEach((l, i) => ctx.fillText(l, 10, 30 + i * 20));
+                return;
+            }
+
+            try {
+                ctx.clearRect(0, 0, V_WIDTH, V_HEIGHT);
+
+                ctx.save(); 
+                try {
+                    ctx.beginPath(); ctx.rect(0, 0, VIEW_W, VIEW_H); ctx.clip(); 
+
+                    let bgImg = images.bgHome;
+                    if (currentDisplayBg === "home" && isNight && images.bgHomeNight.loaded && images.bgHomeNight.img.width > 0) bgImg = images.bgHomeNight;
+                    if (currentDisplayBg === "school" && images.bgSchool.loaded && images.bgSchool.img.width > 0) bgImg = images.bgSchool;
+                    if (currentDisplayBg === "gekou" && images.bgGekou.loaded && images.bgGekou.img.width > 0) bgImg = images.bgGekou;
+                    if (currentDisplayBg === "amusement" && images.bgAmusement.loaded && images.bgAmusement.img.width > 0) bgImg = images.bgAmusement;
+                    if (currentDisplayBg === "park" && images.bgPark.loaded && images.bgPark.img.width > 0) bgImg = images.bgPark;
+
+                    if (bgImg.loaded && bgImg.img.width > 0) {
+                        const img = bgImg.img;
+                        const scale = Math.max(VIEW_W / img.width, VIEW_H / img.height);
+                        const drawW = img.width * scale;
+                        const drawH = img.height * scale;
+                        const dx = (VIEW_W - drawW) / 2;
+                        const dy = (VIEW_H - drawH) / 2;
+                        ctx.drawImage(img, dx, dy, drawW, drawH);
+                    } else { 
+                        let col = isNight ? "#000033" : "#87CEEB";
+                        ctx.fillStyle = col; ctx.fillRect(0, 0, VIEW_W, VIEW_H); 
+                        ctx.fillStyle = "#A0522D"; ctx.fillRect(0, VIEW_H - 120, VIEW_W, 120); 
+                    }
+
+                    if (currentDisplayChar !== 0) {
+                        let currentImgObj = null;
+                        if (currentDisplayChar === 1) currentImgObj = images.heroine1;
+                        else if (currentDisplayChar === 2) currentImgObj = images.heroine2;
+                        else if (currentDisplayChar === 3) currentImgObj = images.heroine3;
+                        else if (currentDisplayChar === 4) currentImgObj = images.heroine4;
+                        else if (currentDisplayChar === 5) currentImgObj = images.heroine5;
+                        
+                        if (currentImgObj && currentImgObj.loaded && currentImgObj.img.width > 0 && currentImgObj.img.height > 0) {
+                            const img = currentImgObj.img;
+                            const maxW = VIEW_W * 0.95; 
+                            const maxH = VIEW_H * 0.95;
+                            const scale = Math.min(maxW / img.width, maxH / img.height);
+                            const drawW = img.width * scale; 
+                            const drawH = img.height * scale;
+                            const dx = (VIEW_W - drawW) / 2;
+                            const dy = VIEW_H - drawH;
+                            ctx.drawImage(img, dx, dy, drawW, drawH);
+                        }
+                    }
+
+                    if (gameState === "EXECUTING" && executingCommand && images.chibiSheet.loaded && images.chibiSheet.img.width > 0) {
+                        const img = images.chibiSheet.img;
+                        const frameW = img.width / 2;
+                        const frameH = img.height / 7;
+                        
+                        const rowMap = { bunkei: 0, rikei: 1, geijutsu: 2, undou: 3, zatsugaku: 4, youshi: 5, rest: 6 };
+                        const rowIndex = rowMap[executingCommand] !== undefined ? rowMap[executingCommand] : 0;
+                        
+                        const frameIndex = Math.floor(Date.now() / 300) % 2;
+                        const sx = frameIndex * frameW;
+                        const sy = rowIndex * frameH;
+                        
+                        const maxW = VIEW_W * 0.6; 
+                        const maxH = VIEW_H * 0.6;
+                        const scale = Math.min(maxW / frameW, maxH / frameH);
+                        const drawW = frameW * scale; 
+                        const drawH = frameH * scale;
+                        const dx = (VIEW_W - drawW) / 2;
+                        const dy = (VIEW_H - drawH) / 2 + 30; 
+                        
+                        ctx.drawImage(img, sx, sy, frameW, frameH, dx, dy, drawW, drawH);
+                    }
+                    
+                    const maxShoushin = Math.max(...heroines.filter(h => h.met).map(h => h.shoushin));
+                    if (maxShoushin >= 80) {
+                        ctx.fillStyle = "red"; ctx.beginPath(); ctx.arc(30, 30, 16, 0, Math.PI * 2); ctx.fill();
+                        ctx.fillStyle = "white"; ctx.font = "16px monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("爆", 30, 30);
+                    }
+                } finally {
+                    ctx.restore(); 
+                }
+
+                ctx.strokeStyle = "#FFF"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, VIEW_H); ctx.lineTo(V_WIDTH, VIEW_H); ctx.stroke();
+
+                drawWindow(0, MSG_Y, V_WIDTH, MSG_H);
+
+                let dateColor = "#FFD700";
+                if (isHolidayDay(currentDate)) dateColor = "#FF5555";
+                else if (currentDate.getDay() === 6) dateColor = "#5555FF";
+                ctx.fillStyle = dateColor; 
+                ctx.font = "14px sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+                let dn = isNight ? "夜" : (isHolidayDay(currentDate) ? "朝" : "");
+                ctx.fillText(`${formatDate(currentDate)} ${dn}`, 12, MSG_Y + 6);
+
+                ctx.fillStyle = "#FFF"; ctx.font = "13px sans-serif";
+                let displayString = sysMsg;
+                if (gameState === "MESSAGE" || gameState === "CHOICE") {
+                    displayString = messagePages[currentPageIndex] || "";
+                }
+                
+                const displayLines = displayString.split('\n');
+                displayLines.forEach((line, idx) => {
+                    ctx.fillText(line, 12, MSG_Y + 26 + (idx * 18));
+                });
+
+                if (gameState === "MESSAGE" && currentPageIndex < messagePages.length - 1) {
+                    const lastLineIndex = displayLines.length > 0 ? displayLines.length - 1 : 0;
+                    const textWidth = ctx.measureText(displayLines[lastLineIndex] || "").width;
+                    if (Math.floor(Date.now() / 500) % 2 === 0) {
+                        ctx.fillStyle = "#FFD700"; ctx.textAlign = "left";
+                        ctx.fillText("▼", 12 + textWidth + 8, MSG_Y + 26 + (lastLineIndex * 18));
+                    }
+                }
+
+                ctx.font = "12px monospace"; ctx.fillStyle = "#FFF"; ctx.textAlign = "left";
+                const p = playerStats; const y1 = MSG_Y + 66, y2 = MSG_Y + 80; 
+                const cx = [12, 62, 112, 162, 212, 262]; 
+                ctx.fillText(`文:${Math.floor(p.bunkei)}`, cx[0], y1); 
+                ctx.fillText(`理:${Math.floor(p.rikei)}`, cx[1], y1); 
+                ctx.fillText(`芸:${Math.floor(p.geijutsu)}`, cx[2], y1);
+                ctx.fillText(`運:${Math.floor(p.undou)}`, cx[3], y1); 
+                ctx.fillText(`雑:${Math.floor(p.zatsugaku)}`, cx[4], y1);
+                ctx.fillText(`容:${Math.floor(p.youshi)}`, cx[5], y1);
+                ctx.fillText(`根:${Math.floor(p.konjou)}`, cx[0], y2); 
+                ctx.fillStyle = (p.tairyoku < 30) ? "#FF5555" : "#FFF"; 
+                ctx.fillText(`体:${Math.floor(p.tairyoku)}`, cx[1], y2); 
+                ctx.fillStyle = (p.stress >= 80) ? "#FF5555" : "#FFF"; 
+                ctx.fillText(`ｽﾄ:${Math.floor(p.stress)}`, cx[2], y2);
+                
+                const targetHeroine = heroines.find(h => h.id === currentDisplayChar) || heroines[0];
+                ctx.fillStyle = "#FF88AA"; ctx.fillText(`♡:${Math.floor(targetHeroine.tokimeki)}`, cx[4], y2); 
+                ctx.fillStyle = "#FF5555"; ctx.fillText(`傷:${Math.floor(targetHeroine.shoushin)}`, cx[5], y2);
+
+                floatingTexts.forEach(ft => {
+                    ctx.fillStyle = ft.color; ctx.font = "bold 13px monospace";
+                    ctx.globalAlpha = ft.life / ft.maxLife; 
+                    ctx.fillText(ft.text, ft.x, ft.y);
+                    ft.y += ft.vy; ft.life--;
+                });
+                ctx.globalAlpha = 1.0;
+                floatingTexts = floatingTexts.filter(ft => ft.life > 0);
+
+                if (gameState === "CHOICE") {
+                    const choiceH = 40;
+                    const startY = MSG_Y - 10 - (currentChoices.length * choiceH);
+                    currentChoices.forEach((choice, i) => {
+                        const cy = startY + (i * choiceH);
+                        drawWindow(40, cy, 240, 34); 
+                        ctx.fillStyle = "#FFF"; ctx.font = "14px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+                        ctx.fillText(choice.text, 160, cy + 17);
+                    });
+                }
+
+                drawWindow(0, CMD_Y, V_WIDTH, CMD_H);
+                buttons.forEach(btn => {
+                    let bgCol, borderCol, textCol;
+                    const isPhoneDisabled = (btn.text === "電話" && (!isHolidayDay(currentDate) || isNight));
+                    const isSickDisabled = (sickWeeksLeft > 0 && btn.text !== "休養" && btn.text !== "設定");
+                    
+                    if ((gameState !== "COMMAND" && !btn.isSystem) || isPhoneDisabled || isSickDisabled) {
+                        bgCol = "rgba(50, 50, 50, 0.8)"; borderCol = "#888"; textCol = "#888";
+                    } else {
+                        bgCol = btn.isSystem ? "rgba(50, 50, 50, 0.9)" : (btn.isSpecial ? "rgba(180, 50, 50, 0.9)" : "rgba(30, 30, 60, 0.9)");
+                        borderCol = "#DDD"; textCol = "#FFF";
+                    }
+                    ctx.fillStyle = bgCol; ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
+                    ctx.strokeStyle = borderCol; ctx.lineWidth = 1.5; ctx.strokeRect(btn.x, btn.y, btn.w, btn.h);
+                    ctx.fillStyle = textCol; ctx.font = "14px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+                    ctx.fillText(btn.text, btn.x + btn.w / 2, btn.y + btn.h / 2);
+                });
+
+                if (gameState === "SETTINGS") {
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.85)"; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+                    ctx.fillStyle = "#FFD700"; ctx.font = "bold 20px sans-serif"; ctx.textAlign = "center"; ctx.fillText("システム設定", V_WIDTH / 2, 80);
+                    settingsButtons.forEach(btn => {
+                        ctx.fillStyle = "rgba(0, 0, 150, 0.9)"; ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
+                        ctx.strokeStyle = "#FFF"; ctx.lineWidth = 2; ctx.strokeRect(btn.x, btn.y, btn.w, btn.h);
+                        ctx.fillStyle = "#FFF"; ctx.font = "16px sans-serif"; ctx.textBaseline = "middle";
+                        let text = btn.text;
+                        if (text.includes("BGM")) {
+                            let isPlaying = false;
+                            if (useCustomBGM) {
+                                isPlaying = !customBGM.paused;
+                            } else {
+                                isPlaying = (typeof Tone !== 'undefined' && Tone.Transport.state === "started");
+                            }
+                            text = `BGM: ${isPlaying ? "ON" : "OFF"}`;
+                        }
+                        ctx.fillText(text, btn.x + btn.w / 2, btn.y + btn.h / 2);
+                    });
+                }
+            } catch (err) { globalError = err.message; }
+        }
+
+        function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
+
+        startGame();
+    </script>
+</body>
+</html>
