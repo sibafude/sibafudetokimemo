@@ -320,7 +320,6 @@
         let sickWeeksLeft = 0;
         let sportsDayFlags = { 1994: false, 1995: false, 1996: false };
 
-        // ★ 難易度緩和：上がりやすく、下がりにくいパラメータ設計
         const commandEffects = {
             bunkei: { bunkei: 2.0, rikei: 0.5, zatsugaku: 0.5, geijutsu: -0.1, undou: -0.2, stress: 0.4, tairyoku: -0.5 },
             rikei: { rikei: 2.0, bunkei: 0.5, zatsugaku: 0.5, geijutsu: -0.1, undou: -0.2, stress: 0.4, tairyoku: -0.5 },
@@ -331,7 +330,6 @@
             rest: { stress: -8.0, youshi: -0.2, konjou: -0.2, undou: -0.2, zatsugaku: -0.2, tairyoku: 8.0 }
         };
 
-        // ★ 初期パラメータを体力100, それ以外30に設定
         const playerStats = { bunkei: 30, rikei: 30, geijutsu: 30, undou: 30, zatsugaku: 30, youshi: 30, konjou: 30, stress: 0, tairyoku: 100 };
         const heroines = [
             { id: 1, name: "藤崎 詩織", tokimeki: 10, shoushin: 0, met: true, dialogue: { meet: "「あ、あなたもこの学校だったのね。」", phone_accept: "「いいわよ。どこへ行く？」", phone_reject: "「ごめんなさい、その日は用事があるの。」", date_amusement: "「ジェットコースター、楽しかったわね。」", date_park: "「のんびり歩くのも、たまにはいいわね。」", date_escape: "「ごめん、急用を思い出したわ！じゃあね！」", gekou_invite: "「あ、奇遇ね。一緒に帰らない？」", gekou_ok: "「ええ、一緒に帰りましょう。」", gekou_ng: "「ごめんなさい、今日は用事があるの。」", gekou_reject: "「ごめんなさい、今日は急いでるから。またね。」", bomb: "「...最低ね。」" } },
@@ -505,7 +503,6 @@
                 triggerEndingEvent(); return;
             }
             
-            // ★ 体育祭の日付判定
             let y = currentDate.getFullYear();
             let m = currentDate.getMonth() + 1;
             let d = currentDate.getDate();
@@ -535,10 +532,8 @@
             }
 
             const metCount = heroines.filter(h => h.met).length;
-            // ★ 1人目（藤崎以外）は60以上、それ以降は85以上
             let threshold = (metCount >= 2) ? 85 : 60; 
             
-            // ★ 該当コマンド実行時のみ登場
             if (!heroines[1].met && executingCommand === "bunkei" && playerStats.bunkei >= threshold) {
                 heroines[1].met = true; pushAction(() => {currentDisplayChar = 2; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
                 pushMessage(`図書室で「如月 未緒」と出会った！\n${heroines[1].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
@@ -569,23 +564,31 @@
                 }
             }
 
-            if (!isHolidayDay(currentDate) && executingCommand !== "rest" && executeDaysMax > 1 && Math.random() < 0.05) {
+            // ★ 下校イベントのバグ修正：平日実行の直後に確率で発生させる
+            if (executingCommand && executingCommand !== "rest" && executeDaysMax > 1 && Math.random() < 0.15) {
                 triggerRandomEvent();
             }
         }
 
+        // ★ 試験ロジックの修正・タップ待機追加
         function triggerTestEvent() {
             pushAction(() => { currentDisplayBg = "school"; playBeep(880, 0.15); });
             pushMessage("今週は期末テストだ。\nこれまでの勉強の成果を見せよう！");
             pushAction(() => {
-                const score = playerStats.bunkei + playerStats.rikei + playerStats.geijutsu + playerStats.zatsugaku;
-                let rank = 500 - Math.floor(score / 4);
+                let sub1 = Math.min(100, (playerStats.bunkei / 175) * 100);
+                let sub2 = Math.min(100, (playerStats.rikei / 175) * 100);
+                let sub3 = Math.min(100, (playerStats.geijutsu / 175) * 100);
+                let sub4 = Math.min(100, (playerStats.zatsugaku / 175) * 100);
+                let totalScore = sub1 + sub2 + sub3 + sub4; // Max 400
+                
+                let rank = 500 - Math.floor((totalScore / 400) * 499);
                 if(rank < 1) rank = 1; if(rank > 500) rank = 500;
+                
                 pushMessage(`テストの結果が貼り出されている。\n俺は 500人中 ${rank}位だった！`);
                 if (rank <= 50) {
                     pushMessage("「すごい！ トップクラスだ！」\n女の子たちの評価が上がったようだ。");
                     pushAction(() => { heroines.filter(h=>h.met).forEach(h => h.tokimeki += 5); playBeep(1046, 0.3); });
-                } else if (rank >= 300) {
+                } else if (rank >= 450) {
                     pushMessage("「う、赤点ギリギリ...」\n女の子たちの評価が下がってしまった。");
                     pushAction(() => { heroines.filter(h=>h.met).forEach(h => h.tokimeki -= 2); playBeep(200, 0.3); });
                 }
@@ -593,13 +596,15 @@
             pushAction(() => { currentDisplayBg = "home"; });
         }
 
+        // ★ 体育祭ロジックの修正・タップ待機追加
         function triggerSportsDayEvent() {
             pushAction(() => { currentDisplayBg = "sports"; playBeep(880, 0.15); });
             pushMessage("今日は運動会だ！\nこれまでの鍛錬の成果を見せよう！");
             pushAction(() => {
-                const score = playerStats.undou + (playerStats.konjou / 2);
-                let rank = 150 - Math.floor(score);
+                let score = Math.min(100, (playerStats.undou / 175) * 100) + Math.min(50, (playerStats.konjou / 175) * 50); // Max 150
+                let rank = 150 - Math.floor((score / 150) * 149);
                 if(rank < 1) rank = 1; if(rank > 150) rank = 150;
+                
                 pushMessage(`全競技が終了した。\n俺の成績は 150人中 ${rank}位だった！`);
                 if (rank <= 20) {
                     pushMessage("「すごい！ 大活躍だったわね！」\n女の子たちの評価が上がったようだ。");
@@ -636,7 +641,7 @@
                 currentDate = new Date(1994, 3, 4);
                 isNight = false; currentWeekdayCommand = null; sickWeeksLeft = 0;
                 sportsDayFlags = { 1994: false, 1995: false, 1996: false };
-                for(let k in playerStats) playerStats[k] = (k==='stress' ? 0 : (k==='tairyoku'? 100 : 30)); // ★ 30にリセット
+                for(let k in playerStats) playerStats[k] = (k==='stress' ? 0 : (k==='tairyoku'? 100 : 30)); 
                 heroines.forEach((h, i) => { h.tokimeki = (i===0 ? 10 : 5); h.shoushin = 0; h.met = (i===0); });
                 currentDisplayChar = 0; currentDisplayBg = "home";
                 sysMsg = "今週の予定を決めよう。";
@@ -656,16 +661,25 @@
             pushAction(() => { currentDisplayChar = 0; currentDisplayBg = "home"; });
         }
 
+        // ★ 電話メニュー（個別確率計算を導入）
         function openPhoneMenu() {
             const metHeroines = heroines.filter(h => h.met);
             let choices = metHeroines.map(h => ({
                 text: `${h.name} に電話`, 
                 action: () => { 
-                    let successRate = h.tokimeki * 2 + 30;
+                    let paramScore = 0;
+                    if (h.id === 1) paramScore = (playerStats.bunkei + playerStats.rikei + playerStats.geijutsu + playerStats.undou + playerStats.zatsugaku + playerStats.youshi) / 6;
+                    else if (h.id === 2) paramScore = playerStats.bunkei;
+                    else if (h.id === 3) paramScore = playerStats.rikei;
+                    else if (h.id === 4) paramScore = playerStats.geijutsu;
+                    else if (h.id === 5) paramScore = (playerStats.undou + playerStats.konjou) / 2;
+
+                    // 基本確率20% + 好感度補正 + 相手の好むパラメータによる補正
+                    let successRate = 20 + (h.tokimeki * 2) + (paramScore / 2);
+
                     if (Math.random() * 100 < successRate) {
                         startDateEvent(h); 
                     } else {
-                        // ★ 絵を表示せず、電話口であることを強調
                         pushAction(() => { playBeep(200, 0.15); });
                         pushMessage(`電話をかけてデートに誘ったが...\n電話口：${h.dialogue.phone_reject}`);
                         pushAction(() => { 
