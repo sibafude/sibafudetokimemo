@@ -54,6 +54,7 @@
             <div class="file-row"><label>背景(下校):</label><input type="file" id="bgGekouUpload" accept="image/*"></div>
             <div class="file-row"><label style="color:#FFB6C1;">背景(遊園地):</label><input type="file" id="bgAmusementUpload" accept="image/*"></div>
             <div class="file-row"><label style="color:#90EE90;">背景(公園):</label><input type="file" id="bgParkUpload" accept="image/*"></div>
+            <div class="file-row"><label style="color:#FFA500;">背景(運動会):</label><input type="file" id="bgSportsUpload" accept="image/*"></div>
             
             <div class="section-title">キャラクター</div>
             <div class="file-row"><label>藤崎 (初期):</label><input type="file" id="h1Upload" accept="image/*"></div>
@@ -96,6 +97,7 @@
             bgGekou: { img: new Image(), loaded: false },
             bgAmusement: { img: new Image(), loaded: false },
             bgPark: { img: new Image(), loaded: false },
+            bgSports: { img: new Image(), loaded: false },
             heroine1: { img: new Image(), loaded: false },
             heroine2: { img: new Image(), loaded: false },
             heroine3: { img: new Image(), loaded: false },
@@ -112,6 +114,7 @@
             bgGekou: "bg_gekou.png",
             bgAmusement: "bg_amusement.png",
             bgPark: "bg_park.png",
+            bgSports: "bg_sports.png",
             heroine1: "heroine1.png",
             heroine2: "heroine2.png",
             heroine3: "heroine3.png",
@@ -210,6 +213,7 @@
         setupImageLoader('bgGekouUpload', images.bgGekou); 
         setupImageLoader('bgAmusementUpload', images.bgAmusement); 
         setupImageLoader('bgParkUpload', images.bgPark); 
+        setupImageLoader('bgSportsUpload', images.bgSports); 
         setupImageLoader('h1Upload', images.heroine1);
         setupImageLoader('h2Upload', images.heroine2); 
         setupImageLoader('h3Upload', images.heroine3);
@@ -325,7 +329,7 @@
             rest: { stress: -6.0, youshi: -0.6, konjou: -0.6, undou: -0.6, zatsugaku: -0.6, tairyoku: 6.0 }
         };
 
-        const playerStats = { bunkei: 10, rikei: 10, geijutsu: 10, undou: 10, zatsugaku: 10, youshi: 10, konjou: 10, stress: 0, tairyoku: 100 };
+        const playerStats = { bunkei: 60, rikei: 60, geijutsu: 60, undou: 60, zatsugaku: 60, youshi: 60, konjou: 60, stress: 0, tairyoku: 100 };
         const heroines = [
             { id: 1, name: "藤崎 詩織", tokimeki: 10, shoushin: 0, met: true, dialogue: { meet: "「あ、あなたもこの学校だったのね。」", phone_accept: "「いいわよ。どこへ行く？」", phone_reject: "「ごめんなさい、その日は用事があるの。」", date_amusement: "「ジェットコースター、楽しかったわね。」", date_park: "「のんびり歩くのも、たまにはいいわね。」", date_escape: "「ごめん、急用を思い出したわ！じゃあね！」", gekou_invite: "「あ、奇遇ね。一緒に帰らない？」", gekou_ok: "「ええ、一緒に帰りましょう。」", gekou_ng: "「ごめんなさい、今日は用事があるの。」", gekou_reject: "「ごめんなさい、今日は急いでるから。またね。」", bomb: "「...最低ね。」" } },
             { id: 2, name: "如月 未緒", tokimeki: 5,  shoushin: 0, met: false, dialogue: { meet: "「あ、あの...同じクラスの...」", phone_accept: "「わ、私でいいんですか？ はい...」", phone_reject: "「あ、あの、その日はちょっと...」", date_amusement: "「はわわ...怖かったですぅ...」", date_park: "「静かで、落ち着きますね...」", date_escape: "「あ、あの！急な用事が入ってしまって...！」", gekou_invite: "「あの、もしよかったら一緒に...」", gekou_ok: "「はいっ！嬉しいです...」", gekou_ng: "「あ、ごめんなさい、急ぐので...」", gekou_reject: "「あっ、今日は本を読みたいので...」", bomb: "「ひどいです...」" } },
@@ -349,15 +353,6 @@
         function pushMessage(text) { eventQueue.push({ type: 'message', text: text }); }
         function pushChoice(choices) { eventQueue.push({ type: 'choice', choices: choices }); }
         function pushAction(actionFunc) { eventQueue.push({ type: 'action', action: actionFunc }); }
-
-        function processQueue() {
-            if (gameState === "MESSAGE" || gameState === "CHOICE" || gameState === "SETTINGS" || gameState === "EXECUTING") return;
-            if (eventQueue.length === 0) { gameState = "COMMAND"; return; }
-            const nextEvent = eventQueue[0];
-            if (nextEvent.type === 'message') setupMessage(nextEvent.text);
-            else if (nextEvent.type === 'choice') { currentChoices = nextEvent.choices; gameState = "CHOICE"; }
-            else if (nextEvent.type === 'action') { nextEvent.action(); eventQueue.shift(); processQueue(); }
-        }
 
         function setupMessage(text) {
             try {
@@ -488,7 +483,6 @@
                     if (currentWeekdayCommand) {
                         sysMsg = "（明日から平日の予定を再開しよう）";
                         pushAction(() => { startWeekdayExecution(); });
-                        processQueue();
                     } else {
                         sysMsg = sickWeeksLeft > 0 ? "体調不良だ。休養しよう..." : "今週の予定を決めよう。";
                         gameState = "IDLE"; checkEventsAfterCommand();
@@ -511,6 +505,7 @@
                 const m = currentDate.getMonth() + 1;
                 if (m === 7 || m === 12 || m === 3) triggerTestEvent();
                 if (m === 9) triggerSportsDayEvent(); 
+                startMonthForTest = currentDate.getMonth(); 
             }
 
             if (sickWeeksLeft <= 0 && (playerStats.tairyoku < 20 || playerStats.stress > 80)) {
@@ -522,21 +517,21 @@
             }
 
             const metCount = heroines.filter(h => h.met).length;
-            let multi = (metCount >= 2) ? 1.3 : 1.0;
+            let threshold = (metCount >= 2) ? 100 : 85; 
             
-            if (!heroines[1].met && playerStats.bunkei >= 50 * multi) {
+            if (!heroines[1].met && playerStats.bunkei >= threshold) {
                 heroines[1].met = true; pushAction(() => {currentDisplayChar = 2; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
                 pushMessage(`図書室で「如月 未緒」と出会った！\n${heroines[1].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
             }
-            if (!heroines[2].met && playerStats.rikei >= 50 * multi) {
+            if (!heroines[2].met && playerStats.rikei >= threshold) {
                 heroines[2].met = true; pushAction(() => {currentDisplayChar = 3; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
                 pushMessage(`科学室で「紐緒 結奈」と出会った！\n${heroines[2].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
             }
-            if (!heroines[3].met && playerStats.geijutsu >= 50 * multi) {
+            if (!heroines[3].met && playerStats.geijutsu >= threshold) {
                 heroines[3].met = true; pushAction(() => {currentDisplayChar = 4; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
                 pushMessage(`美術室で「片桐 彩子」と出会った！\n${heroines[3].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
             }
-            if (!heroines[4].met && playerStats.konjou >= 30 * multi) {
+            if (!heroines[4].met && playerStats.konjou >= threshold) {
                 heroines[4].met = true; pushAction(() => {currentDisplayChar = 5; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
                 pushMessage(`グラウンドで「虹野 沙希」と出会った！\n${heroines[4].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
             }
@@ -559,7 +554,6 @@
             }
         }
 
-        // --- 各種イベント定義 ---
         function triggerTestEvent() {
             pushAction(() => { currentDisplayBg = "school"; playBeep(880, 0.15); });
             pushMessage("今週は期末テストだ。\nこれまでの勉強の成果を見せよう！");
@@ -580,7 +574,7 @@
         }
 
         function triggerSportsDayEvent() {
-            pushAction(() => { currentDisplayBg = "school"; playBeep(880, 0.15); });
+            pushAction(() => { currentDisplayBg = "sports"; playBeep(880, 0.15); });
             pushMessage("今日は運動会だ！\nこれまでの鍛錬の成果を見せよう！");
             pushAction(() => {
                 const score = playerStats.undou + (playerStats.konjou / 2);
@@ -621,7 +615,7 @@
             pushAction(() => {
                 currentDate = new Date(1994, 3, 4);
                 isNight = false; currentWeekdayCommand = null; sickWeeksLeft = 0;
-                for(let k in playerStats) playerStats[k] = (k==='stress' ? 0 : (k==='tairyoku'? 100 : 10));
+                for(let k in playerStats) playerStats[k] = (k==='stress' ? 0 : (k==='tairyoku'? 100 : 60));
                 heroines.forEach((h, i) => { h.tokimeki = (i===0 ? 10 : 5); h.shoushin = 0; h.met = (i===0); });
                 currentDisplayChar = 0; currentDisplayBg = "home";
                 sysMsg = "今週の予定を決めよう。";
@@ -646,8 +640,7 @@
             let choices = metHeroines.map(h => ({
                 text: `${h.name} に電話`, 
                 action: () => { 
-                    eventQueue.shift(); 
-                    let successRate = h.tokimeki * 2 + 30; // ★ 成功率のベース値をアップ（以前は + 10）
+                    let successRate = h.tokimeki * 2 + 30;
                     if (Math.random() * 100 < successRate) {
                         startDateEvent(h); 
                     } else {
@@ -658,12 +651,11 @@
                             isNight = true; 
                             sysMsg = "デートを断られてしまった...\n今週の予定を決めよう。";
                         });
-                        processQueue();
                     }
                 }
             }));
             choices.push({ text: "やめる", action: () => { 
-                eventQueue.shift(); sysMsg = "電話をかけるのをやめた。\n今日は何をしようかな？"; gameState = "COMMAND"; 
+                sysMsg = "電話をかけるのをやめた。\n今日は何をしようかな？"; gameState = "COMMAND"; 
             }});
             pushChoice(choices);
         }
@@ -675,11 +667,9 @@
                 { text: "遊園地で遊ぶ", action: () => { processDateChoice(target, "amusement", target.dialogue.date_amusement); }},
                 { text: "公園で散歩", action: () => { processDateChoice(target, "park", target.dialogue.date_park); }}
             ]);
-            processQueue();
         }
 
         function processDateChoice(target, placeStr, successMsg) {
-            eventQueue.shift();
             pushAction(() => { currentDisplayBg = placeStr; currentDisplayChar = target.id; });
             
             let escapeChance = Math.max(0, 60 - playerStats.youshi);
@@ -702,7 +692,6 @@
                 isNight = true; 
                 sysMsg = "今週の予定を決めよう。";
             }); 
-            processQueue();
         }
 
         function triggerRandomEvent() {
@@ -714,7 +703,6 @@
             pushMessage(`下校中、偶然 ${target.name} と会った。\n${target.dialogue.gekou_invite}`);
             pushChoice([
                 { text: "一緒に帰る", action: () => {
-                    eventQueue.shift();
                     let successRate = target.tokimeki * 2 + 20;
                     if (Math.random() * 100 < successRate) {
                         pushAction(() => {
@@ -725,13 +713,12 @@
                         pushAction(() => { playBeep(200, 0.3); });
                         pushMessage(`${target.dialogue.gekou_reject}\n一緒に帰るのを断られてしまった...`);
                     }
-                    pushAction(() => { currentDisplayBg = "home"; currentDisplayChar = 0; }); processQueue();
+                    pushAction(() => { currentDisplayBg = "home"; currentDisplayChar = 0; }); 
                 }},
                 { text: "断る", action: () => {
-                    eventQueue.shift();
                     pushAction(() => { target.shoushin += 15; playBeep(200, 0.3); });
                     pushMessage(`${target.dialogue.gekou_ng}\n少し冷たい態度をとってしまった。`);
-                    pushAction(() => { currentDisplayBg = "home"; currentDisplayChar = 0; }); processQueue();
+                    pushAction(() => { currentDisplayBg = "home"; currentDisplayChar = 0; }); 
                 }}
             ]);
         }
@@ -944,6 +931,7 @@
                     if (currentDisplayBg === "gekou" && images.bgGekou.loaded && images.bgGekou.img.width > 0) bgImg = images.bgGekou;
                     if (currentDisplayBg === "amusement" && images.bgAmusement.loaded && images.bgAmusement.img.width > 0) bgImg = images.bgAmusement;
                     if (currentDisplayBg === "park" && images.bgPark.loaded && images.bgPark.img.width > 0) bgImg = images.bgPark;
+                    if (currentDisplayBg === "sports" && images.bgSports.loaded && images.bgSports.img.width > 0) bgImg = images.bgSports;
 
                     if (bgImg.loaded && bgImg.img.width > 0) {
                         const img = bgImg.img;
