@@ -318,18 +318,21 @@
         let startMonthForTest = 0; 
         
         let sickWeeksLeft = 0;
+        let sportsDayFlags = { 1994: false, 1995: false, 1996: false };
 
+        // ★ 難易度緩和：上がりやすく、下がりにくいパラメータ設計
         const commandEffects = {
-            bunkei: { bunkei: 1.0, rikei: 0.2, zatsugaku: 0.2, geijutsu: -0.2, undou: -0.4, stress: 0.6, tairyoku: -1.0 },
-            rikei: { rikei: 1.0, bunkei: 0.2, zatsugaku: 0.2, geijutsu: -0.2, undou: -0.4, stress: 0.6, tairyoku: -1.0 },
-            geijutsu: { geijutsu: 1.0, zatsugaku: 0.2, youshi: 0.2, bunkei: -0.2, rikei: -0.2, undou: -0.4, stress: 0.6, tairyoku: -0.8 },
-            undou: { undou: 1.0, konjou: 0.8, bunkei: -0.4, rikei: -0.4, geijutsu: -0.2, stress: 0.8, tairyoku: -1.5 },
-            zatsugaku: { zatsugaku: 1.0, youshi: 0.2, rikei: -0.2, geijutsu: -0.2, konjou: -0.2, stress: 0.4, tairyoku: -0.5 },
-            youshi: { youshi: 1.0, zatsugaku: 0.2, undou: -0.2, konjou: -0.4, stress: 0.4, tairyoku: -0.5 },
-            rest: { stress: -6.0, youshi: -0.6, konjou: -0.6, undou: -0.6, zatsugaku: -0.6, tairyoku: 6.0 }
+            bunkei: { bunkei: 2.0, rikei: 0.5, zatsugaku: 0.5, geijutsu: -0.1, undou: -0.2, stress: 0.4, tairyoku: -0.5 },
+            rikei: { rikei: 2.0, bunkei: 0.5, zatsugaku: 0.5, geijutsu: -0.1, undou: -0.2, stress: 0.4, tairyoku: -0.5 },
+            geijutsu: { geijutsu: 2.0, zatsugaku: 0.5, youshi: 0.5, bunkei: -0.1, rikei: -0.1, undou: -0.2, stress: 0.4, tairyoku: -0.4 },
+            undou: { undou: 2.0, konjou: 1.5, bunkei: -0.2, rikei: -0.2, geijutsu: -0.1, stress: 0.5, tairyoku: -1.0 },
+            zatsugaku: { zatsugaku: 2.0, youshi: 0.5, rikei: -0.1, geijutsu: -0.1, konjou: -0.1, stress: 0.3, tairyoku: -0.3 },
+            youshi: { youshi: 2.0, zatsugaku: 0.5, undou: -0.1, konjou: -0.2, stress: 0.3, tairyoku: -0.3 },
+            rest: { stress: -8.0, youshi: -0.2, konjou: -0.2, undou: -0.2, zatsugaku: -0.2, tairyoku: 8.0 }
         };
 
-        const playerStats = { bunkei: 60, rikei: 60, geijutsu: 60, undou: 60, zatsugaku: 60, youshi: 60, konjou: 60, stress: 0, tairyoku: 100 };
+        // ★ 初期パラメータを体力100, それ以外30に設定
+        const playerStats = { bunkei: 30, rikei: 30, geijutsu: 30, undou: 30, zatsugaku: 30, youshi: 30, konjou: 30, stress: 0, tairyoku: 100 };
         const heroines = [
             { id: 1, name: "藤崎 詩織", tokimeki: 10, shoushin: 0, met: true, dialogue: { meet: "「あ、あなたもこの学校だったのね。」", phone_accept: "「いいわよ。どこへ行く？」", phone_reject: "「ごめんなさい、その日は用事があるの。」", date_amusement: "「ジェットコースター、楽しかったわね。」", date_park: "「のんびり歩くのも、たまにはいいわね。」", date_escape: "「ごめん、急用を思い出したわ！じゃあね！」", gekou_invite: "「あ、奇遇ね。一緒に帰らない？」", gekou_ok: "「ええ、一緒に帰りましょう。」", gekou_ng: "「ごめんなさい、今日は用事があるの。」", gekou_reject: "「ごめんなさい、今日は急いでるから。またね。」", bomb: "「...最低ね。」" } },
             { id: 2, name: "如月 未緒", tokimeki: 5,  shoushin: 0, met: false, dialogue: { meet: "「あ、あの...同じクラスの...」", phone_accept: "「わ、私でいいんですか？ はい...」", phone_reject: "「あ、あの、その日はちょっと...」", date_amusement: "「はわわ...怖かったですぅ...」", date_park: "「静かで、落ち着きますね...」", date_escape: "「あ、あの！急な用事が入ってしまって...！」", gekou_invite: "「あの、もしよかったら一緒に...」", gekou_ok: "「はいっ！嬉しいです...」", gekou_ng: "「あ、ごめんなさい、急ぐので...」", gekou_reject: "「あっ、今日は本を読みたいので...」", bomb: "「ひどいです...」" } },
@@ -501,10 +504,25 @@
             if (currentDate.getFullYear() >= 1997 && currentDate.getMonth() >= 2) {
                 triggerEndingEvent(); return;
             }
+            
+            // ★ 体育祭の日付判定
+            let y = currentDate.getFullYear();
+            let m = currentDate.getMonth() + 1;
+            let d = currentDate.getDate();
+
+            if (y === 1994 && m === 6 && d >= 4 && !sportsDayFlags[1994]) {
+                triggerSportsDayEvent();
+                sportsDayFlags[1994] = true;
+            } else if (y === 1995 && m === 6 && d >= 3 && !sportsDayFlags[1995]) {
+                triggerSportsDayEvent();
+                sportsDayFlags[1995] = true;
+            } else if (y === 1996 && m === 6 && d >= 1 && !sportsDayFlags[1996]) {
+                triggerSportsDayEvent();
+                sportsDayFlags[1996] = true;
+            }
+
             if (startMonthForTest !== currentDate.getMonth()) {
-                const m = currentDate.getMonth() + 1;
                 if (m === 7 || m === 12 || m === 3) triggerTestEvent();
-                if (m === 9) triggerSportsDayEvent(); 
                 startMonthForTest = currentDate.getMonth(); 
             }
 
@@ -517,21 +535,23 @@
             }
 
             const metCount = heroines.filter(h => h.met).length;
-            let threshold = (metCount >= 2) ? 100 : 85; 
+            // ★ 1人目（藤崎以外）は60以上、それ以降は85以上
+            let threshold = (metCount >= 2) ? 85 : 60; 
             
-            if (!heroines[1].met && playerStats.bunkei >= threshold) {
+            // ★ 該当コマンド実行時のみ登場
+            if (!heroines[1].met && executingCommand === "bunkei" && playerStats.bunkei >= threshold) {
                 heroines[1].met = true; pushAction(() => {currentDisplayChar = 2; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
                 pushMessage(`図書室で「如月 未緒」と出会った！\n${heroines[1].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
             }
-            if (!heroines[2].met && playerStats.rikei >= threshold) {
+            if (!heroines[2].met && executingCommand === "rikei" && playerStats.rikei >= threshold) {
                 heroines[2].met = true; pushAction(() => {currentDisplayChar = 3; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
                 pushMessage(`科学室で「紐緒 結奈」と出会った！\n${heroines[2].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
             }
-            if (!heroines[3].met && playerStats.geijutsu >= threshold) {
+            if (!heroines[3].met && executingCommand === "geijutsu" && playerStats.geijutsu >= threshold) {
                 heroines[3].met = true; pushAction(() => {currentDisplayChar = 4; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
                 pushMessage(`美術室で「片桐 彩子」と出会った！\n${heroines[3].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
             }
-            if (!heroines[4].met && playerStats.konjou >= threshold) {
+            if (!heroines[4].met && executingCommand === "undou" && playerStats.konjou >= threshold) {
                 heroines[4].met = true; pushAction(() => {currentDisplayChar = 5; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
                 pushMessage(`グラウンドで「虹野 沙希」と出会った！\n${heroines[4].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
             }
@@ -615,7 +635,8 @@
             pushAction(() => {
                 currentDate = new Date(1994, 3, 4);
                 isNight = false; currentWeekdayCommand = null; sickWeeksLeft = 0;
-                for(let k in playerStats) playerStats[k] = (k==='stress' ? 0 : (k==='tairyoku'? 100 : 60));
+                sportsDayFlags = { 1994: false, 1995: false, 1996: false };
+                for(let k in playerStats) playerStats[k] = (k==='stress' ? 0 : (k==='tairyoku'? 100 : 30)); // ★ 30にリセット
                 heroines.forEach((h, i) => { h.tokimeki = (i===0 ? 10 : 5); h.shoushin = 0; h.met = (i===0); });
                 currentDisplayChar = 0; currentDisplayBg = "home";
                 sysMsg = "今週の予定を決めよう。";
@@ -644,10 +665,10 @@
                     if (Math.random() * 100 < successRate) {
                         startDateEvent(h); 
                     } else {
-                        pushAction(() => { currentDisplayChar = h.id; currentDisplayBg = "home"; playBeep(200, 0.15); });
-                        pushMessage(`${h.name} に電話してデートに誘ったが...\n${h.dialogue.phone_reject}`);
+                        // ★ 絵を表示せず、電話口であることを強調
+                        pushAction(() => { playBeep(200, 0.15); });
+                        pushMessage(`電話をかけてデートに誘ったが...\n電話口：${h.dialogue.phone_reject}`);
                         pushAction(() => { 
-                            currentDisplayChar = 0; 
                             isNight = true; 
                             sysMsg = "デートを断られてしまった...\n今週の予定を決めよう。";
                         });
@@ -662,7 +683,7 @@
 
         function startDateEvent(target) {
             pushAction(() => { currentDisplayChar = 0; currentDisplayBg = "home"; playBeep(659, 0.15); });
-            pushMessage(`${target.name} に電話してデートに誘った。\n${target.dialogue.phone_accept}`);
+            pushMessage(`電話をかけてデートに誘った。\n電話口：${target.dialogue.phone_accept}`);
             pushChoice([
                 { text: "遊園地で遊ぶ", action: () => { processDateChoice(target, "amusement", target.dialogue.date_amusement); }},
                 { text: "公園で散歩", action: () => { processDateChoice(target, "park", target.dialogue.date_park); }}
@@ -724,7 +745,7 @@
         }
 
         function saveGame() {
-            const state = { playerStats, heroines, date: currentDate.getTime(), currentDisplayChar, currentDisplayBg, isNight, currentWeekdayCommand, sickWeeksLeft };
+            const state = { playerStats, heroines, date: currentDate.getTime(), currentDisplayChar, currentDisplayBg, isNight, currentWeekdayCommand, sickWeeksLeft, sportsDayFlags };
             localStorage.setItem('tokimemo_save', JSON.stringify(state));
             sysMsg = "セーブが完了しました。\n" + (sickWeeksLeft > 0 ? "体調不良だ。休養しよう...": (isHolidayDay(currentDate) ? (isNight?"今週の予定を決めよう。":"今日は何をしようかな？") : "今週の予定を決めよう。")); 
             playBeep(1046, 0.15); gameState = "COMMAND";
@@ -741,6 +762,7 @@
                 isNight = state.isNight || false;
                 currentWeekdayCommand = state.currentWeekdayCommand || null;
                 sickWeeksLeft = state.sickWeeksLeft || 0;
+                sportsDayFlags = state.sportsDayFlags || { 1994: false, 1995: false, 1996: false };
                 sysMsg = "ロードが完了しました。\n" + (sickWeeksLeft > 0 ? "体調不良だ。休養しよう...": (isHolidayDay(currentDate) ? (isNight?"今週の予定を決めよう。":"今日は何をしようかな？") : "今週の予定を決めよう。")); 
                 playBeep(1318, 0.15);
             } else { sysMsg = "セーブデータがありません。"; playBeep(200, 0.2); }
