@@ -289,6 +289,10 @@
 
         const input = { x: 0, y: 0, clicked: false };
         let lastTapTime = 0;
+        let pointerStartX = 0;
+        let pointerStartY = 0;
+        let swipeDir = null; // ★スワイプ判定用
+
         canvas.addEventListener('pointerdown', (e) => { 
             if (!bgmStarted) { initAudioEngine(); startBGM(); }
             e.preventDefault(); 
@@ -299,6 +303,26 @@
             input.x = (e.clientX - rect.left) * (canvas.width / rect.width);
             input.y = (e.clientY - rect.top) * (canvas.height / rect.height);
             input.clicked = true; 
+            
+            // ★ スワイプ開始位置を記録
+            pointerStartX = input.x;
+            pointerStartY = input.y;
+            swipeDir = null;
+        });
+
+        // ★ スワイプ終了時の判定を追加
+        canvas.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            let upX = (e.clientX - rect.left) * (canvas.width / rect.width);
+            let upY = (e.clientY - rect.top) * (canvas.height / rect.height);
+            let dx = upX - pointerStartX;
+            let dy = upY - pointerStartY;
+
+            if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+                if (dx > 0) swipeDir = "RIGHT";
+                else swipeDir = "LEFT";
+            }
         });
 
         let gameState = "IDLE"; 
@@ -312,7 +336,6 @@
         let currentDisplayChar = 0; 
         let currentDisplayBg = "home"; 
         
-        // ★ カレンダー用の状態変数
         let viewYear = 1994;
         let viewMonth = 3;
         
@@ -845,10 +868,10 @@
             document.getElementById('upload-status').innerText = "";
         }
 
-        // ★ ボタン配置を「4列レイアウト」ベースに調整
+        // ★ ボタン配置を4列レイアウトに調整
         const btnW = 68, btnH = 28;
-        const cols3 = [30, 126, 222]; // 3列用の中央寄せ
-        const cols4 = [12, 89, 166, 243]; // 4列用の等間隔配置
+        const cols3 = [30, 126, 222]; 
+        const cols4 = [12, 89, 166, 243]; 
         const rows = [CMD_Y + 15, CMD_Y + 55, CMD_Y + 95];
 
         const buttons = [
@@ -858,7 +881,6 @@
             { x: cols3[0], y: rows[1], w: btnW, h: btnH, text: "運動", action: () => executeCommand("undou") },
             { x: cols3[1], y: rows[1], w: btnW, h: btnH, text: "雑学", action: () => executeCommand("zatsugaku") },
             { x: cols3[2], y: rows[1], w: btnW, h: btnH, text: "容姿", action: () => executeCommand("youshi") },
-            // ★ 下段を4列化してカレンダーを追加
             { x: cols4[0], y: rows[2], w: btnW, h: btnH, text: "休養", action: () => executeCommand("rest") },
             { x: cols4[1], y: rows[2], w: btnW, h: btnH, text: "電話", action: () => executeCommand("phone"), isSpecial: true },
             { x: cols4[2], y: rows[2], w: btnW, h: btnH, text: "カレンダー", action: () => { gameState = "CALENDAR"; viewYear = currentDate.getFullYear(); viewMonth = currentDate.getMonth(); playBeep(523); }, isSystem: true },
@@ -940,6 +962,22 @@
                 if (gameState === "IDLE" && eventQueue.length === 0) {
                     gameState = "COMMAND";
                 }
+                
+                // ★ スワイプの処理 (カレンダーのみ)
+                if (swipeDir) {
+                    if (gameState === "CALENDAR") {
+                        if (swipeDir === "LEFT") {
+                            viewMonth++;
+                            if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+                            playBeep(523, 0.1);
+                        } else if (swipeDir === "RIGHT") {
+                            viewMonth--;
+                            if (viewMonth < 0) { viewMonth = 11; viewYear--; }
+                            playBeep(523, 0.1);
+                        }
+                    }
+                    swipeDir = null; // 処理完了
+                }
 
                 if (input.clicked) {
                     if (gameState === "MESSAGE") {
@@ -963,12 +1001,12 @@
                             }
                         }
                     } else if (gameState === "CALENDAR") {
-                        // ★ カレンダー画面での入力処理 (ページ送り)
-                        if (input.x >= 20 && input.x <= 50 && input.y >= 30 && input.y <= 60) {
+                        // ★ カレンダー画面でのボタン入力処理 (左右ボタンと戻るボタン)
+                        if (input.x >= 30 && input.x <= 80 && input.y >= 480 && input.y <= 520) {
                             viewMonth--;
                             if (viewMonth < 0) { viewMonth = 11; viewYear--; }
                             playBeep(523, 0.1);
-                        } else if (input.x >= 270 && input.x <= 300 && input.y >= 30 && input.y <= 60) {
+                        } else if (input.x >= 240 && input.x <= 290 && input.y >= 480 && input.y <= 520) {
                             viewMonth++;
                             if (viewMonth > 11) { viewMonth = 0; viewYear++; }
                             playBeep(523, 0.1);
@@ -1206,19 +1244,19 @@
                         ctx.fillText(text, btn.x + btn.w / 2, btn.y + btn.h / 2);
                     });
                 } else if (gameState === "CALENDAR") {
-                    // ★ カレンダー描画 (ページ送り対応)
-                    ctx.fillStyle = "rgba(0, 0, 0, 0.95)"; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+                    // ★ カレンダー描画 (背景を半透明にし、下部ボタンを配置)
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.75)"; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
                     ctx.fillStyle = "#FFD700"; ctx.font = "bold 18px sans-serif"; ctx.textAlign = "center"; 
                     ctx.fillText(`${viewYear}年 ${viewMonth + 1}月 の予定`, V_WIDTH / 2, 50);
 
-                    // ページ送りボタン
-                    ctx.fillStyle = "rgba(50, 50, 150, 0.9)"; ctx.fillRect(20, 30, 30, 30);
-                    ctx.strokeStyle = "#FFF"; ctx.lineWidth = 1.5; ctx.strokeRect(20, 30, 30, 30);
-                    ctx.fillStyle = "#FFF"; ctx.font = "14px sans-serif"; ctx.fillText("◀", 35, 45);
+                    // ページ送りボタン（◀と▶を下に配置）
+                    ctx.fillStyle = "rgba(50, 50, 150, 0.9)"; ctx.fillRect(30, 480, 50, 40);
+                    ctx.strokeStyle = "#FFF"; ctx.lineWidth = 1.5; ctx.strokeRect(30, 480, 50, 40);
+                    ctx.fillStyle = "#FFF"; ctx.font = "14px sans-serif"; ctx.fillText("◀", 55, 500);
 
-                    ctx.fillStyle = "rgba(50, 50, 150, 0.9)"; ctx.fillRect(270, 30, 30, 30);
-                    ctx.strokeStyle = "#FFF"; ctx.lineWidth = 1.5; ctx.strokeRect(270, 30, 30, 30);
-                    ctx.fillStyle = "#FFF"; ctx.font = "14px sans-serif"; ctx.fillText("▶", 285, 45);
+                    ctx.fillStyle = "rgba(50, 50, 150, 0.9)"; ctx.fillRect(240, 480, 50, 40);
+                    ctx.strokeStyle = "#FFF"; ctx.lineWidth = 1.5; ctx.strokeRect(240, 480, 50, 40);
+                    ctx.fillStyle = "#FFF"; ctx.font = "14px sans-serif"; ctx.fillText("▶", 265, 500);
                     
                     let firstDay = new Date(viewYear, viewMonth, 1).getDay();
                     let lastDate = new Date(viewYear, viewMonth + 1, 0).getDate();
@@ -1245,7 +1283,6 @@
                         ctx.fillStyle = "rgba(255,255,255,0.1)";
                         ctx.fillRect(startX + curX*cw + 2, startY + curY*ch + 2, cw - 4, ch - 4);
                         
-                        // 今日の日付をハイライト
                         if (viewYear === currentDate.getFullYear() && viewMonth === currentDate.getMonth() && d === currentDate.getDate()) {
                             ctx.strokeStyle = "#FFD700";
                             ctx.lineWidth = 2;
