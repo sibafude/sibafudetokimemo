@@ -344,11 +344,12 @@
         let executeDaysMax = 0;
         let lastDayAdvanceTime = 0;
         let floatingTexts = []; 
+        let startMonthForTest = 0; 
         
         let sickWeeksLeft = 0;
         let sportsDayFlags = { 1994: false, 1995: false, 1996: false };
         let cultureDayFlags = { 1994: false, 1995: false, 1996: false };
-        let testDayFlags = {}; // 期末テスト実行フラグ
+        let testDayFlags = {};
 
         const commandEffects = {
             bunkei: { bunkei: 2.0, rikei: 0.5, zatsugaku: 0.5, geijutsu: -0.1, undou: -0.2, stress: 0.4, tairyoku: -0.5 },
@@ -369,7 +370,7 @@
             { id: 5, name: "虹野 沙希", tokimeki: 5,  shoushin: 0, met: false, dialogue: { meet: "「ファイトー！ あ、ごめんなさい大声出して。」", phone_accept: "「うん！ わたしでよかったら！」", phone_reject: "「ごめんなさい、マネージャーの仕事があって...」", date_amusement: "「きゃー！ すごい迫力でしたね！」", date_park: "「お弁当作ってくればよかったですね。」", date_escape: "「あ、ごめんなさい！急に部活の用事が...！」", gekou_invite: "「あ、お疲れ様です！ 一緒に帰りませんか？」", gekou_ok: "「わぁ、嬉しいです！ 帰りましょう！」", gekou_ng: "「ごめんなさい、部活の買い出しがあるんです。」", gekou_reject: "「ごめんなさい、今日は部活のみんなと帰るので。」", bomb: "「…見損ないました。」" } }
         ];
 
-        // テストの日付（その月の10日以降で最初の月曜日）を計算する関数
+        // テストの日付（その月の10日以降で最初の月曜日）
         function getTestDate(year, month) {
             for(let d=10; d<=16; d++) {
                 let testDate = new Date(year, month, d);
@@ -388,6 +389,16 @@
         function formatDate(date) {
             const days = ['日', '月', '火', '水', '木', '金', '土'];
             return `${date.getFullYear()}年 ${date.getMonth() + 1}月 ${date.getDate()}日 (${days[date.getDay()]})`;
+        }
+
+        // ★ エラー修正：processQueueの復活
+        function processQueue() {
+            if (gameState === "MESSAGE" || gameState === "CHOICE" || gameState === "SETTINGS" || gameState === "EXECUTING" || gameState === "CALENDAR") return;
+            if (eventQueue.length === 0) { gameState = "COMMAND"; return; }
+            const nextEvent = eventQueue[0];
+            if (nextEvent.type === 'message') setupMessage(nextEvent.text);
+            else if (nextEvent.type === 'choice') { currentChoices = nextEvent.choices; gameState = "CHOICE"; }
+            else if (nextEvent.type === 'action') { nextEvent.action(); eventQueue.shift(); processQueue(); }
         }
 
         function pushMessage(text) { eventQueue.push({ type: 'message', text: text }); }
@@ -428,12 +439,13 @@
                 openPhoneMenu();
                 return;
             }
-            if (isHolidayDay(currentDate) && !isNight) {
+            if (isHolidayDay(currentDate)) {
+                // 休日のコマンド実行（1日だけ）
                 executingCommand = type;
                 executeDaysLeft = 1;
                 executeDaysMax = 1;
                 gameState = "EXECUTING";
-                currentDisplayBg = (type === "rest") ? "home" : "school";
+                currentDisplayBg = "home"; // 祝日は必ず自宅
                 sysMsg = "実行中...";
                 lastDayAdvanceTime = Date.now();
             } else {
@@ -448,16 +460,18 @@
                 isNight = false;
             }
             executingCommand = currentWeekdayCommand;
+            startMonthForTest = currentDate.getMonth();
 
             let count = 0;
             let tempDate = new Date(currentDate);
-            while (!isHolidayDay(tempDate)) {
-                count++; tempDate.setDate(tempDate.getDate() + 1);
-                if (count > 10) break; 
+            // 次の休日または日曜日が来るまでカウント
+            while (!isHolidayDay(tempDate) && tempDate.getDay() !== 0) {
+                count++;
+                tempDate.setDate(tempDate.getDate() + 1);
             }
             executeDaysLeft = count; executeDaysMax = count;
             gameState = "EXECUTING";
-            currentDisplayBg = (executingCommand === "rest") ? "home" : "school";
+            currentDisplayBg = (executingCommand === "rest" || isHolidayDay(currentDate)) ? "home" : "school";
             sysMsg = "実行中...";
             lastDayAdvanceTime = Date.now();
         }
@@ -497,17 +511,13 @@
             finishDayExecution();
         }
 
+        // ★ 連休・土曜自動再開ロジックの修正
         function finishDayExecution() {
             heroines.filter(h => h.met).forEach(h => { h.shoushin += (1 + h.tokimeki / 10) / 7; });
             executeDaysLeft--;
 
             if (executeDaysLeft > 0) {
                 currentDate.setDate(currentDate.getDate() + 1); 
-                if (isHolidayDay(currentDate)) {
-                    isNight = false; currentDisplayBg = "home";
-                    sysMsg = sickWeeksLeft > 0 ? "体調不良だ。休養しよう..." : "今日は休日だ。\n何をしようかな？";
-                    gameState = "IDLE"; checkEventsAfterCommand(); 
-                }
             } else {
                 if (executingCommand === "rest" && sickWeeksLeft > 0) {
                     sickWeeksLeft--;
@@ -518,20 +528,41 @@
                 }
 
                 if (isHolidayDay(currentDate) && !isNight) {
+                    // 休日昼終了 -> 夜へ
                     isNight = true; currentDisplayBg = "home";
-                    if (currentWeekdayCommand) {
+                    if (currentWeekdayCommand && currentDate.getDay() !== 6) {
                         sysMsg = "（明日から平日の予定を再開しよう）";
-                        pushAction(() => { startWeekdayExecution(); });
                     } else {
-                        sysMsg = sickWeeksLeft > 0 ? "体調不良だ。休養しよう..." : "今週の予定を決めよう。";
-                        gameState = "IDLE"; checkEventsAfterCommand();
+                        sysMsg = sickWeeksLeft > 0 ? "体調不良だ。休養しよう..." : "明日はどうしようかな？";
                     }
-                } else {
-                    currentDate.setDate(currentDate.getDate() + 1);
-                    isNight = false; currentWeekdayCommand = null; 
-                    currentDisplayBg = "home";
-                    sysMsg = sickWeeksLeft > 0 ? "体調不良だ。休養しよう..." : "今日は休日だ。\n何をしようかな？";
                     gameState = "IDLE"; checkEventsAfterCommand();
+                } else {
+                    // 休日夜終了、または平日自動実行終了 -> 次の日へ
+                    currentDate.setDate(currentDate.getDate() + 1);
+                    isNight = false;
+
+                    if (currentDate.getDay() === 0) {
+                        // 日曜日：週の予定リセット
+                        currentWeekdayCommand = null;
+                        currentDisplayBg = "home";
+                        sysMsg = sickWeeksLeft > 0 ? "体調不良だ。休養しよう..." : "今日は休日だ。\n今週の予定を決めよう。";
+                        gameState = "IDLE"; checkEventsAfterCommand();
+                    } else if (isHolidayDay(currentDate)) {
+                        // 祝日になった
+                        currentDisplayBg = "home";
+                        sysMsg = sickWeeksLeft > 0 ? "体調不良だ。休養しよう..." : "今日は休日だ。\n何をしようかな？";
+                        gameState = "IDLE"; checkEventsAfterCommand();
+                    } else {
+                        // 平日（祝日明けの平日、土曜など）
+                        if (currentWeekdayCommand) {
+                            pushAction(() => { startWeekdayExecution(); });
+                            gameState = "IDLE"; checkEventsAfterCommand();
+                        } else {
+                            currentDisplayBg = "home";
+                            sysMsg = "予定を決めよう。";
+                            gameState = "IDLE"; checkEventsAfterCommand();
+                        }
+                    }
                 }
             }
         }
@@ -545,7 +576,6 @@
             let m = currentDate.getMonth();
             let d = currentDate.getDate();
 
-            // ★ カレンダー同期イベント判定
             if (m === 5) {
                 let sd = (y === 1994) ? 4 : ((y === 1995) ? 3 : 1);
                 if (d >= sd && !sportsDayFlags[y]) {
@@ -611,9 +641,13 @@
                 }
             }
 
+            // 平日の下校イベント
             if (executingCommand && executingCommand !== "rest" && executeDaysMax > 1 && Math.random() < 0.15) {
                 triggerRandomEvent();
             }
+            
+            // ★ イベントキューを消化開始
+            processQueue();
         }
 
         function triggerTestEvent() {
@@ -758,8 +792,10 @@
                         pushMessage(`電話をかけてデートに誘ったが...\n${h.dialogue.phone_reject}`);
                         pushAction(() => { 
                             isNight = true; 
-                            sysMsg = "デートを断られてしまった...\n今週の予定を決めよう。";
+                            if (currentWeekdayCommand && currentDate.getDay() !== 6) sysMsg = "（明日から平日の予定を再開しよう）";
+                            else sysMsg = "明日はどうしようかな？";
                         });
+                        processQueue();
                     }
                 }
             }));
@@ -770,12 +806,13 @@
         }
 
         function startDateEvent(target) {
-            pushAction(() => { currentDisplayChar = 0; currentDisplayBg = "home"; playBeep(659, 0.15); });
+            pushAction(() => { playBeep(659, 0.15); });
             pushMessage(`電話をかけてデートに誘った。\n${target.dialogue.phone_accept}`);
             pushChoice([
                 { text: "遊園地で遊ぶ", action: () => { processDateChoice(target, "amusement", target.dialogue.date_amusement); }},
                 { text: "公園で散歩", action: () => { processDateChoice(target, "park", target.dialogue.date_park); }}
             ]);
+            processQueue();
         }
 
         function processDateChoice(target, placeStr, successMsg) {
@@ -799,8 +836,10 @@
             pushAction(() => { 
                 currentDisplayChar = 0; currentDisplayBg = "home"; 
                 isNight = true; 
-                sysMsg = "今週の予定を決めよう。";
+                if (currentWeekdayCommand && currentDate.getDay() !== 6) sysMsg = "（明日から平日の予定を再開しよう）";
+                else sysMsg = "明日はどうしようかな？";
             }); 
+            processQueue();
         }
 
         function triggerRandomEvent() {
@@ -812,7 +851,7 @@
             pushMessage(`下校中、偶然 ${target.name} と会った。\n${target.dialogue.gekou_invite}`);
             pushChoice([
                 { text: "一緒に帰る", action: () => {
-                    // ★ ヒロインから誘ってきたので承諾すれば100%成功
+                    // ★ 相手から誘ってきたので100%成功する
                     pushAction(() => {
                         target.tokimeki += 5; target.shoushin = Math.max(0, target.shoushin - 10); playBeep(880, 0.15); setTimeout(()=>playBeep(1046, 0.2), 100);
                     });
@@ -1008,6 +1047,7 @@
                             }
                         }
                     } else if (gameState === "CALENDAR") {
+                        // カレンダー画面：下部のボタンまたはスワイプで操作
                         if (input.x >= 30 && input.x <= 80 && input.y >= 480 && input.y <= 520) {
                             viewMonth--;
                             if (viewMonth < 0) { viewMonth = 11; viewYear--; }
@@ -1016,8 +1056,16 @@
                             viewMonth++;
                             if (viewMonth > 11) { viewMonth = 0; viewYear++; }
                             playBeep(523, 0.1);
-                        } else if (input.x >= 100 && input.x <= 220 && input.y >= 480 && input.y <= 520) {
-                            gameState = "COMMAND"; playBeep(523);
+                        } else {
+                            // それ以外の場所（またはカレンダーボタン）を押したら閉じる
+                            for (let btn of buttons) {
+                                if (input.x >= btn.x && input.x <= btn.x + btn.w && input.y >= btn.y && input.y <= btn.y + btn.h) {
+                                    if (btn.text === "カレンダー") {
+                                        gameState = "COMMAND"; playBeep(523);
+                                    }
+                                    break;
+                                }
+                            }
                         }
                     } else if (gameState === "COMMAND") {
                         for (let btn of buttons) {
@@ -1250,17 +1298,17 @@
                         ctx.fillText(text, btn.x + btn.w / 2, btn.y + btn.h / 2);
                     });
                 } else if (gameState === "CALENDAR") {
-                    // ★ 上半分(0 ~ 320)を不透明な黒で塗りつぶす (下半分のゲーム画面はそのまま透けて見える)
-                    ctx.fillStyle = "#000000"; 
+                    // ★ カレンダー上半分描画 (白背景、透過なし)
+                    ctx.fillStyle = "#FFFFFF"; 
                     ctx.fillRect(0, 0, V_WIDTH, 320); 
                     
-                    ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2; 
+                    ctx.strokeStyle = "#222222"; ctx.lineWidth = 2; 
                     ctx.strokeRect(2, 2, V_WIDTH - 4, 320 - 4);
 
-                    ctx.fillStyle = "#FFD700"; ctx.font = "bold 18px sans-serif"; ctx.textAlign = "center"; 
+                    ctx.fillStyle = "#222222"; ctx.font = "bold 18px sans-serif"; ctx.textAlign = "center"; 
                     ctx.fillText(`${viewYear}年 ${viewMonth + 1}月 の予定`, V_WIDTH / 2, 30);
 
-                    // ページ送りボタン（◀と▶を下部に配置）
+                    // ページ送りボタン（下部のコマンド画面に被せるように配置）
                     ctx.fillStyle = "rgba(50, 50, 150, 0.9)"; ctx.fillRect(30, 480, 50, 40);
                     ctx.strokeStyle = "#FFF"; ctx.lineWidth = 1.5; ctx.strokeRect(30, 480, 50, 40);
                     ctx.fillStyle = "#FFF"; ctx.font = "14px sans-serif"; ctx.fillText("◀", 55, 500);
@@ -1281,7 +1329,7 @@
                     ctx.font = "14px sans-serif";
                     ctx.textBaseline = "middle";
                     for(let i=0; i<7; i++) {
-                        ctx.fillStyle = (i===0) ? "#FF5555" : (i===6 ? "#5555FF" : "#FFF");
+                        ctx.fillStyle = (i===0) ? "#D00" : (i===6 ? "#00D" : "#222");
                         ctx.fillText(days[i], startX + i*cw + cw/2, startY - 20);
                     }
 
@@ -1291,36 +1339,42 @@
                         let testDate = new Date(viewYear, viewMonth, d);
                         let isHol = isHolidayDay(testDate);
                         
-                        ctx.fillStyle = "rgba(255,255,255,0.1)";
+                        ctx.fillStyle = "#F9F9F9";
                         ctx.fillRect(startX + curX*cw + 2, startY + curY*ch + 2, cw - 4, ch - 4);
+                        ctx.strokeStyle = "#DDD"; ctx.lineWidth = 1;
+                        ctx.strokeRect(startX + curX*cw + 2, startY + curY*ch + 2, cw - 4, ch - 4);
                         
                         if (viewYear === currentDate.getFullYear() && viewMonth === currentDate.getMonth() && d === currentDate.getDate()) {
-                            ctx.strokeStyle = "#FFD700";
+                            ctx.strokeStyle = "#FF0000";
                             ctx.lineWidth = 2;
                             ctx.strokeRect(startX + curX*cw + 2, startY + curY*ch + 2, cw - 4, ch - 4);
                         }
                         
-                        ctx.fillStyle = isHol ? "#FF5555" : (curX===6 ? "#5555FF" : "#FFF");
+                        ctx.fillStyle = isHol ? "#D00" : (curX===6 ? "#00D" : "#222");
                         ctx.fillText(d, startX + curX*cw + cw/2, startY + curY*ch + 12);
                         
                         let evText = "";
                         let evColor = "";
                         let monthNum = viewMonth + 1;
+
+                        if (viewYear === 1994 && monthNum === 4 && d === 4) { evText = "入学式"; evColor = "#D00"; }
+                        if (viewYear === 1997 && monthNum === 3 && d === 1) { evText = "卒業式"; evColor = "#D00"; }
+
                         if (monthNum === 3 || monthNum === 7 || monthNum === 12) {
                             let td = getTestDate(viewYear, viewMonth);
-                            if (d === td) { evText = "期末試験"; evColor = "#FFAA00"; } 
+                            if (d === td) { evText = "期末試験"; evColor = "#D60"; } 
                         }
                         if (monthNum === 6) {
                             let sd = (viewYear === 1994) ? 4 : ((viewYear === 1995) ? 3 : 1);
-                            if (d === sd) { evText = "体育祭"; evColor = "#FF5555"; }
+                            if (d === sd) { evText = "体育祭"; evColor = "#D00"; }
                         }
                         if (monthNum === 11) {
-                            if (d === 3) { evText = "文化祭"; evColor = "#FF69B4"; } 
+                            if (d === 3) { evText = "文化祭"; evColor = "#D0A"; } 
                         }
 
                         if (evText) {
                             ctx.fillStyle = evColor;
-                            ctx.font = "9px sans-serif";
+                            ctx.font = "bold 9px sans-serif";
                             ctx.fillText(evText, startX + curX*cw + cw/2, startY + curY*ch + 28);
                             ctx.font = "14px sans-serif";
                         }
@@ -1328,11 +1382,6 @@
                         curX++;
                         if(curX > 6) { curX = 0; curY++; }
                     }
-
-                    ctx.fillStyle = "rgba(0, 0, 150, 0.9)"; ctx.fillRect(100, 480, 120, 40);
-                    ctx.strokeStyle = "#FFF"; ctx.lineWidth = 2; ctx.strokeRect(100, 480, 120, 40);
-                    ctx.fillStyle = "#FFF"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-                    ctx.fillText("戻る", 160, 500);
                 }
             } catch (err) { globalError = err.message; }
         }
