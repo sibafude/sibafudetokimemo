@@ -271,22 +271,23 @@
         let pointerStartX = 0;
         let pointerStartY = 0;
         let swipeDir = null; 
+        let logTapStart = 0;
 
         canvas.addEventListener('pointerdown', (e) => { 
             if (!bgmStarted) { initAudioEngine(); startBGM(); }
             e.preventDefault(); 
             const now = Date.now();
             if (now - lastTapTime < 100) return; 
-            lastTapTime = now;
+            
             const rect = canvas.getBoundingClientRect();
             input.x = (e.clientX - rect.left) * (canvas.width / rect.width);
             input.y = (e.clientY - rect.top) * (canvas.height / rect.height);
-            input.clicked = true; 
             input.isDown = true;
             
             pointerStartX = input.x;
             pointerStartY = input.y;
             swipeDir = null;
+            logTapStart = now;
         });
         
         canvas.addEventListener('pointermove', (e) => {
@@ -298,8 +299,14 @@
             
             if (gameState === "LOG") {
                 logScrollY += (input.y - pointerStartY); 
-                if (logScrollY > 0) logScrollY = 0; // 上限（一番上が最新）
                 pointerStartY = input.y;
+                
+                let totalLogHeight = messageLog.length * 25;
+                let viewableHeight = V_HEIGHT - 80;
+                let minScroll = -Math.max(0, totalLogHeight - viewableHeight);
+                
+                if (logScrollY > 0) logScrollY = 0;
+                if (logScrollY < minScroll) logScrollY = minScroll;
             }
         });
 
@@ -308,9 +315,20 @@
             input.isDown = false;
             let dx = input.x - pointerStartX;
             let dy = input.y - pointerStartY;
-            if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
-                if (dx > 0) swipeDir = "RIGHT";
-                else swipeDir = "LEFT";
+            const now = Date.now();
+            
+            if (gameState === "LOG") {
+                // スワイプ距離が短く、タップ時間も短い場合のみクリックとして扱う
+                if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && now - logTapStart < 200) {
+                    input.clicked = true;
+                }
+            } else {
+                input.clicked = true;
+                lastTapTime = now;
+                if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+                    if (dx > 0) swipeDir = "RIGHT";
+                    else swipeDir = "LEFT";
+                }
             }
         });
 
@@ -381,11 +399,43 @@
             const days = ['日', '月', '火', '水', '木', '金', '土'];
             return `${date.getFullYear()}年 ${date.getMonth() + 1}月 ${date.getDate()}日 (${days[date.getDay()]})`;
         }
+        
+        function getWrappedLines(text, maxWidth) {
+            ctx.font = "13px sans-serif";
+            const paragraphs = text.split('\n');
+            let lines = [];
+            for (let para of paragraphs) {
+                if (para === "") continue;
+                let currentLine = "";
+                for (let char of para.split('')) {
+                    let testLine = currentLine + char;
+                    if (ctx.measureText(testLine).width > maxWidth && currentLine.length > 0) {
+                        lines.push(currentLine); currentLine = char;
+                    } else currentLine = testLine;
+                }
+                if (currentLine) lines.push(currentLine);
+            }
+            return lines;
+        }
+
+        function addLog(text) {
+            if (!text) return;
+            let lines = getWrappedLines(text, V_WIDTH - 30);
+            for (let line of lines) {
+                messageLog.push(line);
+            }
+            if(messageLog.length > 200) messageLog = messageLog.slice(messageLog.length - 200);
+        }
+
+        function setSysMsg(text) {
+            if (!text || sysMsg === text) return;
+            sysMsg = text;
+            addLog(text);
+        }
 
         function pushMessage(text) { 
             eventQueue.push({ type: 'message', text: text }); 
-            messageLog.push(text.replace(/\n/g, " ")); 
-            if (messageLog.length > 50) messageLog.shift(); 
+            addLog(text);
         }
         function pushChoice(choices) { eventQueue.push({ type: 'choice', choices: choices }); }
         function pushAction(actionFunc) { eventQueue.push({ type: 'action', action: actionFunc }); }
@@ -394,8 +444,7 @@
             eventQueue = newEvents.concat(eventQueue);
             newEvents.forEach(e => {
                 if(e.type === 'message') {
-                    messageLog.push(e.text.replace(/\n/g, " "));
-                    if(messageLog.length > 50) messageLog.shift();
+                    addLog(e.text);
                 }
             });
         }
@@ -460,21 +509,21 @@
         function checkDayStart() {
             if (isHolidayDay(currentDate)) {
                 currentDisplayBg = "home";
-                sysMsg = sickWeeksLeft > 0 ? "体調不良だ。休養しよう..." : "今日は休日だ。\n何をしようかな？";
                 isAutoExecuting = false;
                 gameState = "IDLE";
+                setSysMsg(sickWeeksLeft > 0 ? "体調不良だ。休養しよう..." : "今日は休日だ。\n何をしようかな？");
                 checkEventsAfterCommand(); 
             } else {
                 if (currentWeekdayCommand) {
                     executingCommand = currentWeekdayCommand;
                     isAutoExecuting = true;
                     gameState = "EXECUTING";
-                    currentDisplayBg = (executingCommand === "rest") ? "home" : "school";
-                    sysMsg = "実行中...";
+                    currentDisplayBg = "school"; // 平日はすべて学校
+                    setSysMsg("実行中...");
                     lastDayAdvanceTime = Date.now();
                 } else {
-                    sysMsg = "予定を決めよう。";
                     gameState = "IDLE";
+                    setSysMsg("予定を決めよう。");
                     checkEventsAfterCommand();
                 }
             }
@@ -516,8 +565,11 @@
             if (executingCommand === "rest" && sickWeeksLeft > 0) {
                 sickWeeksLeft--;
                 if (sickWeeksLeft <= 0) {
-                    pushAction(() => playBeep(1046, 0.2));
-                    pushMessage("体調がすっかり良くなった！\nこれで通常通り活動できるぞ。");
+                    let evts = [
+                        { type: 'action', action: () => playBeep(1046, 0.2) },
+                        { type: 'message', text: "体調がすっかり良くなった！\nこれで通常通り活動できるぞ。" }
+                    ];
+                    insertEvents(evts);
                 }
             }
 
@@ -526,11 +578,16 @@
 
             pushAction(() => {
                 if (!isAutoExecuting) {
-                    isNight = true;
-                    currentDisplayBg = "home";
-                    if (currentWeekdayCommand && currentDate.getDay() !== 6) sysMsg = "（明日から平日の予定を再開しよう。\nコマンドを押して進む）";
-                    else sysMsg = "明日の予定を決めよう。";
-                    gameState = "COMMAND"; 
+                    if (currentWeekdayCommand && currentDate.getDay() !== 6) {
+                        currentDate.setDate(currentDate.getDate() + 1);
+                        isNight = false;
+                        checkDayStart();
+                    } else {
+                        isNight = true;
+                        currentDisplayBg = "home";
+                        gameState = "COMMAND"; 
+                        setSysMsg("明日の予定を決めよう。");
+                    }
                 } else {
                     if (currentDate.getDay() === 6) { 
                         currentDate.setDate(currentDate.getDate() + 1);
@@ -584,8 +641,11 @@
             if (sickWeeksLeft <= 0 && (playerStats.tairyoku < 20 || playerStats.stress > 80)) {
                 if (Math.random() < 0.3) {
                     sickWeeksLeft = 2;
-                    pushAction(() => playBeep(200, 0.5));
-                    pushMessage("体調が悪い...無理をしすぎたようだ。\n病気になってしまった。\nしばらくは休養しかできない。");
+                    let evts = [
+                        { type: 'action', action: () => playBeep(200, 0.5) },
+                        { type: 'message', text: "体調が悪い...無理をしすぎたようだ。\n病気になってしまった。\nしばらくは休養しかできない。" }
+                    ];
+                    insertEvents(evts);
                 }
             }
 
@@ -593,20 +653,40 @@
             let threshold = (metCount >= 2) ? 85 : 60; 
             
             if (!heroines[1].met && executingCommand === "bunkei" && playerStats.bunkei >= threshold) {
-                heroines[1].met = true; pushAction(() => {currentDisplayChar = 2; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
-                pushMessage(`図書室で「如月 未緒」と出会った！\n${heroines[1].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
+                heroines[1].met = true; 
+                let evts = [
+                    { type: 'action', action: () => {currentDisplayChar = 2; currentDisplayBg = "school"; playBeep(880, 0.2);} },
+                    { type: 'message', text: `図書室で「如月 未緒」と出会った！\n${heroines[1].dialogue.meet}` },
+                    { type: 'action', action: () => {currentDisplayChar = 0; currentDisplayBg = "home";} }
+                ];
+                insertEvents(evts);
             }
             if (!heroines[2].met && executingCommand === "rikei" && playerStats.rikei >= threshold) {
-                heroines[2].met = true; pushAction(() => {currentDisplayChar = 3; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
-                pushMessage(`科学室で「紐緒 結奈」と出会った！\n${heroines[2].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
+                heroines[2].met = true; 
+                let evts = [
+                    { type: 'action', action: () => {currentDisplayChar = 3; currentDisplayBg = "school"; playBeep(880, 0.2);} },
+                    { type: 'message', text: `科学室で「紐緒 結奈」と出会った！\n${heroines[2].dialogue.meet}` },
+                    { type: 'action', action: () => {currentDisplayChar = 0; currentDisplayBg = "home";} }
+                ];
+                insertEvents(evts);
             }
             if (!heroines[3].met && executingCommand === "geijutsu" && playerStats.geijutsu >= threshold) {
-                heroines[3].met = true; pushAction(() => {currentDisplayChar = 4; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
-                pushMessage(`美術室で「片桐 彩子」と出会った！\n${heroines[3].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
+                heroines[3].met = true; 
+                let evts = [
+                    { type: 'action', action: () => {currentDisplayChar = 4; currentDisplayBg = "school"; playBeep(880, 0.2);} },
+                    { type: 'message', text: `美術室で「片桐 彩子」と出会った！\n${heroines[3].dialogue.meet}` },
+                    { type: 'action', action: () => {currentDisplayChar = 0; currentDisplayBg = "home";} }
+                ];
+                insertEvents(evts);
             }
             if (!heroines[4].met && executingCommand === "undou" && playerStats.konjou >= threshold) {
-                heroines[4].met = true; pushAction(() => {currentDisplayChar = 5; currentDisplayBg = "school"; playBeep(880, 0.2);}); 
-                pushMessage(`グラウンドで「虹野 沙希」と出会った！\n${heroines[4].dialogue.meet}`); pushAction(() => {currentDisplayChar = 0; currentDisplayBg = "home";});
+                heroines[4].met = true; 
+                let evts = [
+                    { type: 'action', action: () => {currentDisplayChar = 5; currentDisplayBg = "school"; playBeep(880, 0.2);} },
+                    { type: 'message', text: `グラウンドで「虹野 沙希」と出会った！\n${heroines[4].dialogue.meet}` },
+                    { type: 'action', action: () => {currentDisplayChar = 0; currentDisplayBg = "home";} }
+                ];
+                insertEvents(evts);
             }
 
             const bombers = heroines.filter(h => h.met && h.shoushin >= 100);
@@ -616,8 +696,11 @@
                 const maxShoushin = Math.max(...heroines.filter(h => h.met).map(h => h.shoushin));
                 if (maxShoushin >= 80) {
                     if (Math.random() < 0.2) {
-                        pushAction(() => playBeep(200, 0.3));
-                        pushMessage("...誰かの爆弾が点火したようだ。\n電話をしてケアしよう。");
+                        let evts = [
+                            { type: 'action', action: () => playBeep(200, 0.3) },
+                            { type: 'message', text: "...誰かの爆弾が点火したようだ。\n電話をしてケアしよう。" }
+                        ];
+                        insertEvents(evts);
                     }
                 }
             }
@@ -628,126 +711,147 @@
         }
 
         function triggerTestEvent() {
-            pushAction(() => { currentDisplayBg = "school"; playBeep(880, 0.15); });
-            pushMessage("今週は期末テストだ。\nこれまでの勉強の成果を見せよう！");
-            pushAction(() => {
-                let sub1 = Math.floor(Math.min(100, (playerStats.bunkei / 175) * 100));
-                let sub2 = Math.floor(Math.min(100, (playerStats.rikei / 175) * 100));
-                let sub3 = Math.floor(Math.min(100, (playerStats.geijutsu / 175) * 100));
-                let sub4 = Math.floor(Math.min(100, (playerStats.zatsugaku / 175) * 100));
-                let totalScore = sub1 + sub2 + sub3 + sub4; 
-                
-                let rank = 500 - Math.floor((totalScore / 400) * 499);
-                if(rank < 1) rank = 1; if(rank > 500) rank = 500;
-                
-                pushMessage(`【国語・数学・英語】\n文系の知識が問われる... 得点: ${sub1}点`);
-                pushMessage(`【物理・化学】\n理系の知識が問われる... 得点: ${sub2}点`);
-                pushMessage(`【音楽・美術】\n芸術の知識が問われる... 得点: ${sub3}点`);
-                pushMessage(`【一般教養】\n雑学の知識が問われる... 得点: ${sub4}点`);
-                pushMessage(`テストの結果が貼り出されている。\n俺は 500人中 ${rank}位だった！`);
-                
-                pushAction(() => {
+            let evts = [
+                { type: 'action', action: () => { currentDisplayBg = "school"; playBeep(880, 0.15); } },
+                { type: 'message', text: "今週は期末テストだ。\nこれまでの勉強の成果を見せよう！" },
+                { type: 'action', action: () => {
+                    let sub1 = Math.floor(Math.min(100, (playerStats.bunkei / 175) * 100));
+                    let sub2 = Math.floor(Math.min(100, (playerStats.rikei / 175) * 100));
+                    let sub3 = Math.floor(Math.min(100, (playerStats.geijutsu / 175) * 100));
+                    let sub4 = Math.floor(Math.min(100, (playerStats.zatsugaku / 175) * 100));
+                    let totalScore = sub1 + sub2 + sub3 + sub4; 
+                    
+                    let rank = 500 - Math.floor((totalScore / 400) * 499);
+                    if(rank < 1) rank = 1; if(rank > 500) rank = 500;
+                    
+                    let resultEvts = [
+                        { type: 'message', text: `【国語・数学・英語】\n文系の知識が問われる... 得点: ${sub1}点` },
+                        { type: 'message', text: `【物理・化学】\n理系の知識が問われる... 得点: ${sub2}点` },
+                        { type: 'message', text: `【音楽・美術】\n芸術の知識が問われる... 得点: ${sub3}点` },
+                        { type: 'message', text: `【一般教養】\n雑学の知識が問われる... 得点: ${sub4}点` },
+                        { type: 'message', text: `テストの結果が貼り出されている。\n俺は 500人中 ${rank}位だった！` }
+                    ];
+
                     if (rank <= 50) {
-                        pushMessage("「すごい！ トップクラスだ！」\n女の子たちの評価が上がったようだ。");
-                        pushAction(() => { heroines.filter(h=>h.met).forEach(h => h.tokimeki += 5); playBeep(1046, 0.3); });
+                        resultEvts.push({ type: 'message', text: "「すごい！ トップクラスだ！」\n女の子たちの評価が上がったようだ。" });
+                        resultEvts.push({ type: 'action', action: () => { heroines.filter(h=>h.met).forEach(h => h.tokimeki += 5); playBeep(1046, 0.3); } });
                     } else if (rank >= 450) {
-                        pushMessage("「う、赤点ギリギリ...」\n女の子たちの評価が下がってしまった。");
-                        pushAction(() => { heroines.filter(h=>h.met).forEach(h => h.tokimeki -= 2); playBeep(200, 0.3); });
+                        resultEvts.push({ type: 'message', text: "「う、赤点ギリギリ...」\n女の子たちの評価が下がってしまった。" });
+                        resultEvts.push({ type: 'action', action: () => { heroines.filter(h=>h.met).forEach(h => h.tokimeki -= 2); playBeep(200, 0.3); } });
                     }
-                    pushAction(() => { currentDisplayBg = "home"; });
-                });
-            });
+                    resultEvts.push({ type: 'action', action: () => { currentDisplayBg = "home"; } });
+                    insertEvents(resultEvts);
+                }}
+            ];
+            insertEvents(evts);
         }
 
         function triggerSportsDayEvent() {
-            pushAction(() => { currentDisplayBg = "sports"; playBeep(880, 0.15); });
-            pushMessage("今日は運動会だ！\nこれまでの鍛錬の成果を見せよう！");
-            pushAction(() => {
-                let score = Math.min(100, (playerStats.undou / 175) * 100) + Math.min(50, (playerStats.konjou / 175) * 50); 
-                let rank = 150 - Math.floor((score / 150) * 149);
-                if(rank < 1) rank = 1; if(rank > 150) rank = 150;
-                
-                pushMessage("全競技が終了した。");
-                pushAction(() => {
+            let evts = [
+                { type: 'action', action: () => { currentDisplayBg = "sports"; playBeep(880, 0.15); } },
+                { type: 'message', text: "今日は運動会だ！\nこれまでの鍛錬の成果を見せよう！" },
+                { type: 'action', action: () => {
+                    let score = Math.min(100, (playerStats.undou / 175) * 100) + Math.min(50, (playerStats.konjou / 175) * 50); 
+                    let rank = 150 - Math.floor((score / 150) * 149);
+                    if(rank < 1) rank = 1; if(rank > 150) rank = 150;
+                    
+                    let resultEvts = [{ type: 'message', text: "全競技が終了した。" }];
+                    
                     if (rank <= 20) {
-                        pushMessage("競技で大活躍した！ クラスのヒーローだ！\n女の子たちの評価が上がったようだ。");
-                        pushAction(() => { heroines.filter(h=>h.met).forEach(h => h.tokimeki += 8); playBeep(1046, 0.3); });
+                        resultEvts.push({ type: 'message', text: "競技で大活躍した！ クラスのヒーローだ！\n女の子たちの評価が上がったようだ。" });
+                        resultEvts.push({ type: 'action', action: () => { heroines.filter(h=>h.met).forEach(h => h.tokimeki += 8); playBeep(1046, 0.3); } });
                     } else if (rank <= 100) {
-                        pushMessage("そこそこ頑張った。\n普通の結果だった。");
+                        resultEvts.push({ type: 'message', text: "そこそこ頑張った。\n普通の結果だった。" });
                     } else {
-                        pushMessage("あまり活躍できなかった...\n女の子たちの評価が下がってしまった。");
-                        pushAction(() => { heroines.filter(h=>h.met).forEach(h => h.tokimeki -= 3); playBeep(200, 0.3); });
+                        resultEvts.push({ type: 'message', text: "あまり活躍できなかった...\n女の子たちの評価が下がってしまった。" });
+                        resultEvts.push({ type: 'action', action: () => { heroines.filter(h=>h.met).forEach(h => h.tokimeki -= 3); playBeep(200, 0.3); } });
                     }
-                    pushAction(() => { currentDisplayBg = "home"; });
-                });
-            });
+                    resultEvts.push({ type: 'action', action: () => { currentDisplayBg = "home"; } });
+                    insertEvents(resultEvts);
+                }}
+            ];
+            insertEvents(evts);
         }
 
         function triggerCultureDayEvent() {
-            pushAction(() => { currentDisplayBg = "culture"; playBeep(880, 0.15); });
-            pushMessage("今日は文化祭だ！\n学校中が賑わっている。");
-            pushAction(() => {
-                let score = Math.floor(playerStats.geijutsu + playerStats.zatsugaku);
-                pushMessage(`展示の準備が完了した。\n果たして評価は...`);
-                pushAction(() => {
+            let evts = [
+                { type: 'action', action: () => { currentDisplayBg = "culture"; playBeep(880, 0.15); } },
+                { type: 'message', text: "今日は文化祭だ！\n学校中が賑わっている。" },
+                { type: 'action', action: () => {
+                    let score = Math.floor(playerStats.geijutsu + playerStats.zatsugaku);
+                    let resultEvts = [{ type: 'message', text: "展示の準備が完了した。\n果たして評価は..." }];
+
                     if (score > 150) {
-                        pushMessage("展示は大成功！\n女の子たちの評価が上がったようだ。");
-                        pushAction(() => { heroines.filter(h=>h.met).forEach(h => h.tokimeki += 8); playBeep(1046, 0.3); });
+                        resultEvts.push({ type: 'message', text: "展示は大成功！\n女の子たちの評価が上がったようだ。" });
+                        resultEvts.push({ type: 'action', action: () => { heroines.filter(h=>h.met).forEach(h => h.tokimeki += 8); playBeep(1046, 0.3); } });
                     } else if (score < 80) {
-                        pushMessage("展示はあまり人が来なかった...\n少し残念だ。");
-                        pushAction(() => { heroines.filter(h=>h.met).forEach(h => h.tokimeki -= 2); playBeep(200, 0.3); });
+                        resultEvts.push({ type: 'message', text: "展示はあまり人が来なかった...\n少し残念だ。" });
+                        resultEvts.push({ type: 'action', action: () => { heroines.filter(h=>h.met).forEach(h => h.tokimeki -= 2); playBeep(200, 0.3); } });
                     } else {
-                        pushMessage("展示はそこそこの盛り上がりだった。\n普通に楽しめた。");
+                        resultEvts.push({ type: 'message', text: "展示はそこそこの盛り上がりだった。\n普通に楽しめた。" });
                     }
-                    pushAction(() => { currentDisplayBg = "home"; });
-                });
-            });
+                    resultEvts.push({ type: 'action', action: () => { currentDisplayBg = "home"; } });
+                    insertEvents(resultEvts);
+                }}
+            ];
+            insertEvents(evts);
         }
 
         function triggerEndingEvent() {
-            pushAction(() => { currentDisplayChar = 0; currentDisplayBg = "school"; });
-            pushMessage("1997年 3月1日...\nついに卒業式の日を迎えた。");
-            pushMessage("伝説の樹の下で待っていると\n誰かがやってきたようだ...");
-            pushAction(() => {
-                let bestHeroine = null; let maxTokimeki = 40; 
-                for(let h of heroines) {
-                    if(h.met && h.tokimeki > maxTokimeki && h.shoushin < 50) { bestHeroine = h; maxTokimeki = h.tokimeki; }
-                }
-                if (bestHeroine) {
-                    pushAction(() => { currentDisplayChar = bestHeroine.id; playBeep(880, 0.2); setTimeout(()=>playBeep(1046, 0.4), 200); });
-                    pushMessage(`${bestHeroine.name}「...来てくれて、ありがとう。」`);
-                    pushMessage(`${bestHeroine.name}「ずっと前から、あなたのことが...\n好きでした！」`);
-                    pushMessage("ハッピーエンド！\n（画面をタップして最初から）");
-                } else {
-                    pushAction(() => { playBeep(200, 0.5); });
-                    pushMessage("............\n誰も来なかった。");
-                    pushMessage("俺の青春は一体何だったんだ...\nバッドエンド。\n（タップして最初から）");
-                }
-            });
-            pushAction(() => {
-                currentDate = new Date(1994, 3, 4);
-                isNight = false; currentWeekdayCommand = null; sickWeeksLeft = 0;
-                sportsDayFlags = { 1994: false, 1995: false, 1996: false };
-                cultureDayFlags = { 1994: false, 1995: false, 1996: false };
-                testDayFlags = {};
-                for(let k in playerStats) playerStats[k] = (k==='stress' ? 0 : (k==='tairyoku'? 100 : 30)); 
-                heroines.forEach((h, i) => { h.tokimeki = (i===0 ? 10 : 5); h.shoushin = 0; h.met = (i===0); });
-                currentDisplayChar = 0; currentDisplayBg = "home";
-                sysMsg = "今週の予定を決めよう。";
-            });
+            let evts = [
+                { type: 'action', action: () => { currentDisplayChar = 0; currentDisplayBg = "school"; } },
+                { type: 'message', text: "1997年 3月1日...\nついに卒業式の日を迎えた。" },
+                { type: 'message', text: "伝説の樹の下で待っていると\n誰かがやってきたようだ..." },
+                { type: 'action', action: () => {
+                    let bestHeroine = null; let maxTokimeki = 40; 
+                    for(let h of heroines) {
+                        if(h.met && h.tokimeki > maxTokimeki && h.shoushin < 50) { bestHeroine = h; maxTokimeki = h.tokimeki; }
+                    }
+                    
+                    let endEvts = [];
+                    if (bestHeroine) {
+                        endEvts.push({ type: 'action', action: () => { currentDisplayChar = bestHeroine.id; playBeep(880, 0.2); setTimeout(()=>playBeep(1046, 0.4), 200); } });
+                        endEvts.push({ type: 'message', text: `${bestHeroine.name}「...来てくれて、ありがとう。」` });
+                        endEvts.push({ type: 'message', text: `${bestHeroine.name}「ずっと前から、あなたのことが...\n好きでした！」` });
+                        endEvts.push({ type: 'message', text: "ハッピーエンド！\n（画面をタップして最初から）" });
+                    } else {
+                        endEvts.push({ type: 'action', action: () => { playBeep(200, 0.5); } });
+                        endEvts.push({ type: 'message', text: "............\n誰も来なかった。" });
+                        endEvts.push({ type: 'message', text: "俺の青春は一体何だったんだ...\nバッドエンド。\n（タップして最初から）" });
+                    }
+                    
+                    endEvts.push({ type: 'action', action: () => {
+                        currentDate = new Date(1994, 3, 4);
+                        isNight = false; currentWeekdayCommand = null; sickWeeksLeft = 0;
+                        sportsDayFlags = { 1994: false, 1995: false, 1996: false };
+                        cultureDayFlags = { 1994: false, 1995: false, 1996: false };
+                        testDayFlags = {};
+                        for(let k in playerStats) playerStats[k] = (k==='stress' ? 0 : (k==='tairyoku'? 100 : 30)); 
+                        heroines.forEach((h, i) => { h.tokimeki = (i===0 ? 10 : 5); h.shoushin = 0; h.met = (i===0); });
+                        currentDisplayChar = 0; currentDisplayBg = "home";
+                        sysMsg = "";
+                        setSysMsg("今週の予定を決めよう。");
+                    }});
+                    insertEvents(endEvts);
+                }}
+            ];
+            insertEvents(evts);
         }
 
         function triggerBombExplosion(bomber) {
-            pushAction(() => { playBeep(100, 0.5); currentDisplayChar = bomber.id; currentDisplayBg = "school"; });
-            pushMessage(`大変だ！ ${bomber.name} が怒っている\nという噂が流れた！\n${bomber.dialogue.bomb}`);
-            pushAction(() => {
-                heroines.filter(h => h.met).forEach(h => {
-                    h.tokimeki = Math.max(0, h.tokimeki - 20); 
-                    if (h.id !== bomber.id) h.shoushin += 15; else h.shoushin = 0; 
-                });
-            });
-            pushMessage("この噂のせいで、女の子たちの\n俺への評価がガタ落ちしてしまった...");
-            pushAction(() => { currentDisplayChar = 0; currentDisplayBg = "home"; });
+            let evts = [
+                { type: 'action', action: () => { playBeep(100, 0.5); currentDisplayChar = bomber.id; currentDisplayBg = "school"; } },
+                { type: 'message', text: `大変だ！ ${bomber.name} が怒っている\nという噂が流れた！\n${bomber.dialogue.bomb}` },
+                { type: 'action', action: () => {
+                    heroines.filter(h => h.met).forEach(h => {
+                        h.tokimeki = Math.max(0, h.tokimeki - 20); 
+                        if (h.id !== bomber.id) h.shoushin += 15; else h.shoushin = 0; 
+                    });
+                }},
+                { type: 'message', text: "この噂のせいで、女の子たちの\n俺への評価がガタ落ちしてしまった..." },
+                { type: 'action', action: () => { currentDisplayChar = 0; currentDisplayBg = "home"; } }
+            ];
+            insertEvents(evts);
         }
 
         function openPhoneMenu() {
@@ -771,9 +875,15 @@
                             { type: 'action', action: () => { playBeep(200, 0.15); } },
                             { type: 'message', text: `電話をかけてデートに誘ったが...\n${h.dialogue.phone_reject}` },
                             { type: 'action', action: () => { 
-                                isNight = true; 
-                                sysMsg = "デートを断られてしまった...\n明日の予定を決めよう。";
-                                gameState = "COMMAND"; 
+                                if (currentWeekdayCommand && currentDate.getDay() !== 6) {
+                                    currentDate.setDate(currentDate.getDate() + 1);
+                                    isNight = false;
+                                    checkDayStart();
+                                } else {
+                                    isNight = true; 
+                                    gameState = "COMMAND"; 
+                                    setSysMsg("明日の予定を決めよう。");
+                                }
                             }}
                         ];
                         insertEvents(evts);
@@ -781,7 +891,8 @@
                 }
             }));
             choices.push({ text: "やめる", action: () => { 
-                sysMsg = "電話をかけるのをやめた。\n今日は何をしようかな？"; gameState = "COMMAND"; 
+                gameState = "COMMAND"; 
+                setSysMsg("電話をかけるのをやめた。\n今日は何をしようかな？");
             }});
             pushChoice(choices);
         }
@@ -815,10 +926,15 @@
 
             added.push({ type: 'action', action: () => { 
                 currentDisplayChar = 0; currentDisplayBg = "home"; 
-                isNight = true; 
-                if (currentWeekdayCommand && currentDate.getDay() !== 6) sysMsg = "（明日から平日の予定を再開しよう。\nコマンドを押して進む）";
-                else sysMsg = "明日の予定を決めよう。";
-                gameState = "COMMAND";
+                if (currentWeekdayCommand && currentDate.getDay() !== 6) {
+                    currentDate.setDate(currentDate.getDate() + 1);
+                    isNight = false;
+                    checkDayStart();
+                } else {
+                    isNight = true; 
+                    gameState = "COMMAND";
+                    setSysMsg("明日の予定を決めよう。");
+                }
             } }); 
             insertEvents(added);
         }
@@ -828,32 +944,65 @@
             if (metHeroines.length === 0) return;
             const target = metHeroines[Math.floor(Math.random() * metHeroines.length)];
             
-            pushAction(() => { currentDisplayBg = "gekou"; currentDisplayChar = target.id; });
-            pushMessage(`下校中、偶然 ${target.name} と会った。\n${target.dialogue.gekou_invite}`);
-            pushChoice([
-                { text: "一緒に帰る", action: () => {
-                    let evts = [
-                        { type: 'action', action: () => { target.tokimeki += 5; target.shoushin = Math.max(0, target.shoushin - 10); playBeep(880, 0.15); setTimeout(()=>playBeep(1046, 0.2), 100); } },
-                        { type: 'message', text: `楽しく話しながら一緒に帰った。\n${target.dialogue.gekou_ok}\nときめき度が上がった！` },
-                        { type: 'action', action: () => { currentDisplayBg = "home"; currentDisplayChar = 0; } }
-                    ];
-                    insertEvents(evts);
-                }},
-                { text: "断る", action: () => {
-                    let evts = [
-                        { type: 'action', action: () => { target.shoushin += 15; playBeep(200, 0.3); } },
-                        { type: 'message', text: `${target.dialogue.gekou_ng}\n少し冷たい態度をとってしまった。` },
-                        { type: 'action', action: () => { currentDisplayBg = "home"; currentDisplayChar = 0; } }
-                    ];
-                    insertEvents(evts);
-                }}
-            ]);
+            let evts = [{ type: 'action', action: () => { currentDisplayBg = "gekou"; currentDisplayChar = target.id; } }];
+
+            if (target.tokimeki >= 30) {
+                evts.push({ type: 'message', text: `下校中、${target.name} に声をかけられた。\n${target.dialogue.gekou_invite}` });
+                evts.push({ type: 'choice', choices: [
+                    { text: "一緒に帰る", action: () => {
+                        let subEvts = [
+                            { type: 'action', action: () => { target.tokimeki += 5; target.shoushin = Math.max(0, target.shoushin - 10); playBeep(880, 0.15); setTimeout(()=>playBeep(1046, 0.2), 100); } },
+                            { type: 'message', text: `楽しく話しながら一緒に帰った。\n${target.dialogue.gekou_ok}\nときめき度が上がった！` },
+                            { type: 'action', action: () => { currentDisplayBg = "home"; currentDisplayChar = 0; } }
+                        ];
+                        insertEvents(subEvts);
+                    }},
+                    { text: "断る", action: () => {
+                        let subEvts = [
+                            { type: 'action', action: () => { target.shoushin += 15; playBeep(200, 0.3); } },
+                            { type: 'message', text: `${target.dialogue.gekou_ng}\n少し冷たい態度をとってしまった。` },
+                            { type: 'action', action: () => { currentDisplayBg = "home"; currentDisplayChar = 0; } }
+                        ];
+                        insertEvents(subEvts);
+                    }}
+                ]});
+            } else {
+                evts.push({ type: 'message', text: `下校中、偶然 ${target.name} を見かけた。` });
+                evts.push({ type: 'choice', choices: [
+                    { text: "一緒に帰ろうと誘う", action: () => {
+                        let successRate = target.tokimeki * 2 + 20;
+                        if (Math.random() * 100 < successRate) {
+                            let subEvts = [
+                                { type: 'action', action: () => { target.tokimeki += 5; target.shoushin = Math.max(0, target.shoushin - 10); playBeep(880, 0.15); setTimeout(()=>playBeep(1046, 0.2), 100); } },
+                                { type: 'message', text: `声をかけると承諾してくれた。\n${target.dialogue.gekou_ok}\n楽しく話しながら一緒に帰った！` },
+                                { type: 'action', action: () => { currentDisplayBg = "home"; currentDisplayChar = 0; } }
+                            ];
+                            insertEvents(subEvts);
+                        } else {
+                            let subEvts = [
+                                { type: 'action', action: () => { playBeep(200, 0.3); } },
+                                { type: 'message', text: `${target.dialogue.gekou_reject}\n声をかけたが、断られてしまった...` },
+                                { type: 'action', action: () => { currentDisplayBg = "home"; currentDisplayChar = 0; } }
+                            ];
+                            insertEvents(subEvts);
+                        }
+                    }},
+                    { text: "そのまま帰る", action: () => {
+                        let subEvts = [
+                            { type: 'message', text: `声をかけずに一人で帰った。` },
+                            { type: 'action', action: () => { currentDisplayBg = "home"; currentDisplayChar = 0; } }
+                        ];
+                        insertEvents(subEvts);
+                    }}
+                ]});
+            }
+            insertEvents(evts);
         }
 
         function saveGame() {
             const state = { playerStats, heroines, date: currentDate.getTime(), currentDisplayChar, currentDisplayBg, isNight, currentWeekdayCommand, sickWeeksLeft, sportsDayFlags, cultureDayFlags, testDayFlags };
             localStorage.setItem('tokimemo_save', JSON.stringify(state));
-            sysMsg = "セーブが完了しました。\n" + (sickWeeksLeft > 0 ? "体調不良だ。休養しよう...": (isHolidayDay(currentDate) ? (isNight?"明日の予定を決めよう。":"今日は何をしようかな？") : "明日の予定を決めよう。")); 
+            setSysMsg("セーブが完了しました。\n" + (sickWeeksLeft > 0 ? "体調不良だ。休養しよう...": (isHolidayDay(currentDate) ? (isNight?"明日の予定を決めよう。":"今日は何をしようかな？") : "明日の予定を決めよう。"))); 
             playBeep(1046, 0.15); gameState = "COMMAND";
         }
         function loadGame() {
@@ -871,9 +1020,9 @@
                 sportsDayFlags = state.sportsDayFlags || { 1994: false, 1995: false, 1996: false };
                 cultureDayFlags = state.cultureDayFlags || { 1994: false, 1995: false, 1996: false };
                 testDayFlags = state.testDayFlags || {};
-                sysMsg = "ロードが完了しました。\n" + (sickWeeksLeft > 0 ? "体調不良だ。休養しよう...": (isHolidayDay(currentDate) ? (isNight?"明日の予定を決めよう。":"今日は何をしようかな？") : "明日の予定を決めよう。")); 
+                setSysMsg("ロードが完了しました。\n" + (sickWeeksLeft > 0 ? "体調不良だ。休養しよう...": (isHolidayDay(currentDate) ? (isNight?"明日の予定を決めよう。":"今日は何をしようかな？") : "明日の予定を決めよう。"))); 
                 playBeep(1318, 0.15);
-            } else { sysMsg = "セーブデータがありません。"; playBeep(200, 0.2); }
+            } else { setSysMsg("セーブデータがありません。"); playBeep(200, 0.2); }
             gameState = "COMMAND";
         }
 
@@ -911,19 +1060,23 @@
             { x: cols3[2], y: rows[1], w: btnW, h: btnH, text: "容姿", action: () => executeCommand("youshi") },
             { x: cols4[0], y: rows[2], w: btnW, h: btnH, text: "休養", action: () => executeCommand("rest") },
             { x: cols4[1], y: rows[2], w: btnW, h: btnH, text: "電話", action: () => executeCommand("phone"), isSpecial: true },
-            { x: cols4[2], y: rows[2], w: btnW, h: btnH, text: "カレンダー", action: () => { gameState = "CALENDAR"; viewYear = currentDate.getFullYear(); viewMonth = currentDate.getMonth(); playBeep(523); }, isSystem: true },
+            { x: cols4[2], y: rows[2], w: btnW, h: btnH, text: "カレンダー", action: () => { gameState = (gameState==="CALENDAR") ? "COMMAND" : "CALENDAR"; viewYear = currentDate.getFullYear(); viewMonth = currentDate.getMonth(); playBeep(523); }, isSystem: true },
             { x: cols4[3], y: rows[2], w: btnW, h: btnH, text: "設定", action: () => { gameState = "SETTINGS"; playBeep(880); }, isSystem: true }
         ];
 
         const settingsButtons = [
-            { x: 60, y: 70, w: 200, h: 40, text: "ログ確認", action: () => { gameState = "LOG"; logScrollY = 0; playBeep(523); } },
-            { x: 60, y: 125, w: 200, h: 40, text: "セーブする", action: () => { saveGame(); } },
-            { x: 60, y: 180, w: 200, h: 40, text: "ロードする", action: () => { loadGame(); } },
-            { x: 60, y: 235, w: 200, h: 40, text: "BGM 切替", action: toggleBGM },
-            { x: 60, y: 290, w: 200, h: 40, text: "開発モード", action: () => { openDevMode(); } },
+            { x: 60, y: 70, w: 200, h: 40, text: "セーブする", action: () => { saveGame(); } },
+            { x: 60, y: 125, w: 200, h: 40, text: "ロードする", action: () => { loadGame(); } },
+            { x: 60, y: 180, w: 200, h: 40, text: "BGM 切替", action: toggleBGM },
+            { x: 60, y: 235, w: 200, h: 40, text: "開発モード", action: () => { openDevMode(); } },
+            { x: 60, y: 290, w: 200, h: 40, text: "ログ確認", action: () => { gameState = "LOG"; 
+                let totalHeight = messageLog.length * 25;
+                let viewable = V_HEIGHT - 80;
+                logScrollY = -Math.max(0, totalHeight - viewable);
+                playBeep(523); 
+            }},
             { x: 60, y: 345, w: 200, h: 40, text: "閉じる", action: () => { 
                 gameState = "COMMAND"; playBeep(523); 
-                if(!sysMsg) sysMsg = sickWeeksLeft > 0 ? "体調不良だ。休養しよう..." : (isHolidayDay(currentDate) ? (isNight?"明日の予定を決めよう。":"今日は何をしようかな？") : "明日の予定を決めよう。");
             }}
         ];
 
@@ -949,16 +1102,20 @@
             currentWeekdayCommand = null;
             sickWeeksLeft = 0;
             sysMsg = ""; 
+            messageLog = [];
             
-            pushMessage("入学式。\n今日から「きらめき高校」の生徒だ！");
-            pushMessage("充実した3年間にしよう！");
-            pushAction(() => { currentDisplayChar = 1; currentDisplayBg = "school"; playBeep(880, 0.2); });
-            pushMessage(`${heroines[0].name}\n${heroines[0].dialogue.meet}`);
-            pushAction(() => { 
-                currentDisplayChar = 0; 
-                currentDisplayBg = "home"; 
-                sysMsg = "今週の予定を決めよう。";
-            });
+            let evts = [
+                { type: 'message', text: "入学式。\n今日から「きらめき高校」の生徒だ！" },
+                { type: 'message', text: "充実した3年間にしよう！" },
+                { type: 'action', action: () => { currentDisplayChar = 1; currentDisplayBg = "school"; playBeep(880, 0.2); } },
+                { type: 'message', text: `${heroines[0].name}\n${heroines[0].dialogue.meet}` },
+                { type: 'action', action: () => { 
+                    currentDisplayChar = 0; 
+                    currentDisplayBg = "home"; 
+                    setSysMsg("今週の予定を決めよう。");
+                }}
+            ];
+            insertEvents(evts);
 
             if(!isGameRunning) { 
                 isGameRunning = true; 
@@ -1038,7 +1195,6 @@
                             if (viewMonth > 11) { viewMonth = 0; viewYear++; }
                             playBeep(523, 0.1);
                         } else {
-                            // ★ カレンダー表示中でも「カレンダーボタン」で戻る（トグル）
                             for (let btn of buttons) {
                                 if (btn.text === "カレンダー" && input.x >= btn.x && input.x <= btn.x + btn.w && input.y >= btn.y && input.y <= btn.y + btn.h) {
                                     gameState = "COMMAND"; playBeep(523);
@@ -1047,17 +1203,15 @@
                             }
                         }
                     } else if (gameState === "LOG") {
-                        if (Math.abs(input.y - pointerStartY) < 10) {
-                            gameState = "SETTINGS"; playBeep(523);
-                        }
+                        gameState = "SETTINGS"; playBeep(523);
                     } else if (gameState === "COMMAND") {
                         for (let btn of buttons) {
                             if (input.x >= btn.x && input.x <= btn.x + btn.w && input.y >= btn.y && input.y <= btn.y + btn.h) {
                                 if (btn.text !== "休養" && btn.text !== "設定" && btn.text !== "カレンダー" && sickWeeksLeft > 0) {
-                                    sysMsg = "今は体調不良で動けない。\n休養して治そう...";
+                                    setSysMsg("今は体調不良で動けない。\n休養して治そう...");
                                     playBeep(200, 0.2);
                                 } else if (btn.text === "電話" && (!isHolidayDay(currentDate) || isNight)) {
-                                    sysMsg = "今は電話できない。\n予定を決めよう。";
+                                    setSysMsg("今は電話できない。\n予定を決めよう。");
                                     playBeep(200, 0.2);
                                 } else {
                                     if(!btn.isSystem) gameState = "IDLE";
@@ -1247,7 +1401,13 @@
                     const isPhoneDisabled = (btn.text === "電話" && (!isHolidayDay(currentDate) || isNight));
                     const isSickDisabled = (sickWeeksLeft > 0 && btn.text !== "休養" && btn.text !== "設定" && btn.text !== "カレンダー");
                     
-                    if ((gameState !== "COMMAND" && gameState !== "CALENDAR" && !btn.isSystem) || isPhoneDisabled || isSickDisabled) {
+                    if (gameState === "CALENDAR") {
+                        if (btn.text === "カレンダー") {
+                            bgCol = "rgba(180, 50, 50, 0.9)"; borderCol = "#FFF"; textCol = "#FFF";
+                        } else {
+                            bgCol = "rgba(50, 50, 50, 0.5)"; borderCol = "#555"; textCol = "#888";
+                        }
+                    } else if ((gameState !== "COMMAND" && !btn.isSystem) || isPhoneDisabled || isSickDisabled) {
                         bgCol = "rgba(50, 50, 50, 0.8)"; borderCol = "#888"; textCol = "#888";
                     } else {
                         bgCol = btn.isSystem ? "rgba(50, 50, 50, 0.9)" : (btn.isSpecial ? "rgba(180, 50, 50, 0.9)" : "rgba(30, 30, 60, 0.9)");
@@ -1282,33 +1442,32 @@
                     });
                     
                     ctx.fillStyle = "#AAA"; ctx.font = "12px sans-serif"; ctx.textAlign = "right"; ctx.textBaseline = "bottom";
-                    ctx.fillText("Version 1.0.7", V_WIDTH - 10, V_HEIGHT - 10);
+                    ctx.fillText("Version 1.0.9", V_WIDTH - 10, V_HEIGHT - 10);
                     
                 } else if (gameState === "LOG") {
-                    // ★ ログ画面の描画 (背景透過、最新が一番上、上から下に描画)
-                    ctx.fillStyle = "rgba(0, 0, 0, 0.6)"; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+                    // ★ ログ画面の描画 (背景透過、上が古く下が最新)
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.75)"; ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
                     
-                    ctx.fillStyle = "#FFF"; ctx.font = "12px sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-                    let yOffset = 60 + logScrollY;
-                    // messageLog.length - 1 が最新。最新から順に下へ描画していく。
-                    for (let i = messageLog.length - 1; i >= 0; i--) {
-                        if (yOffset > 40 && yOffset < V_HEIGHT - 20) {
+                    ctx.fillStyle = "#FFF"; ctx.font = "13px sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+                    
+                    let yOffset = 50 + logScrollY;
+                    for (let i = 0; i < messageLog.length; i++) {
+                        if (yOffset > 30 && yOffset < V_HEIGHT - 30) {
                             ctx.fillText(messageLog[i], 15, yOffset);
                         }
                         yOffset += 25; 
                     }
 
                     // ヘッダーと戻るボタン
-                    ctx.fillStyle = "rgba(0, 0, 0, 0.85)"; ctx.fillRect(0, 0, V_WIDTH, 40);
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.9)"; ctx.fillRect(0, 0, V_WIDTH, 40);
                     ctx.fillStyle = "#FFD700"; ctx.font = "bold 16px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-                    ctx.fillText("メッセージ履歴 (最新順)", V_WIDTH / 2, 20);
+                    ctx.fillText("メッセージ履歴 (下部が最新)", V_WIDTH / 2, 20);
                     
-                    ctx.fillStyle = "rgba(0, 0, 0, 0.85)"; ctx.fillRect(0, V_HEIGHT - 30, V_WIDTH, 30);
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.9)"; ctx.fillRect(0, V_HEIGHT - 30, V_WIDTH, 30);
                     ctx.fillStyle = "#FFF"; ctx.font = "12px sans-serif";
-                    ctx.fillText("▼タップで閉じる▼", V_WIDTH / 2, V_HEIGHT - 15);
+                    ctx.fillText("▼ 短くタップで閉じる ▼", V_WIDTH / 2, V_HEIGHT - 15);
                     
                 } else if (gameState === "CALENDAR") {
-                    // ★ カレンダー上半分描画 (白背景、透過なし)
                     ctx.fillStyle = "#FFFFFF"; 
                     ctx.fillRect(0, 0, V_WIDTH, 320); 
                     
@@ -1318,7 +1477,6 @@
                     ctx.fillStyle = "#222222"; ctx.font = "bold 18px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
                     ctx.fillText(`${viewYear}年 ${viewMonth + 1}月 の予定`, V_WIDTH / 2, 35);
 
-                    // ★ ページ送りボタン（カレンダー上部に配置）
                     ctx.fillStyle = "rgba(50, 50, 150, 0.9)"; ctx.fillRect(20, 10, 30, 30);
                     ctx.strokeStyle = "#FFF"; ctx.lineWidth = 1.5; ctx.strokeRect(20, 10, 30, 30);
                     ctx.fillStyle = "#FFF"; ctx.font = "14px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("◀", 35, 25);
